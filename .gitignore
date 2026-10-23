@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local data & probe artifacts
+/data/
+ng-probe.html
+
+# but the example env file is meant to be shared
+!.env.example
