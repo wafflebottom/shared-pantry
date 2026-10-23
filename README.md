@@ -1,5 +1,35 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+# Shared Pantry
+
+A shared grocery-list web app for households. Lists are organized by store,
+items can carry brands and per-store prices, and every list shows a running
+estimated total you can check against the receipt at checkout.
+
+## Features
+
+- One list per store (Sprouts, Natural Grocers, Whole Foods, Costco, and more)
+- Add / edit / check off items with quantities, units, and brands
+- Gmail-style interactions: swipe right to complete, swipe left to delete,
+  undo toasts with deferred commit, long-press / right-click to edit
+- Per-store price book: prices are stored once per store + item and shared
+  across lists, with per-unit pricing shown on every row
+- Header total with priced-item coverage, visible while scrolling
+- Multi-device: all clients share one hosted database and auto-refresh
+
+## Tech
+
+Next.js (App Router, Server Actions) · TypeScript · Prisma + PostgreSQL ·
+Tailwind CSS · Lucide icons
+
+## Run locally
+
+1. `npm install`
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` to a Postgres database
+3. `npx prisma db push`
+4. `npm run dev` (add `-- --hostname 0.0.0.0` to test on a phone over LAN)
+
+
 ## Getting Started
 
 First, run the development server:
