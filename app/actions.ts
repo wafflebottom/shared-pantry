@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
 import { itemKeyFor } from "@/lib/prices"
-import { PRICE_FETCHERS } from "@/lib/price-fetch"
+import {
+  PRICE_FETCHERS,
+  SUPPORTED_SEARCH_STORES,
+  searchStoreProducts,
+} from "@/lib/price-fetch"
+
 
 export async function createListTile(formData: FormData) {
   const store = String(formData.get("store") ?? "").trim()
@@ -19,6 +24,17 @@ export async function updateListTile(formData: FormData) {
   await prisma.listTile.update({ where: { id }, data: { store } })
   revalidatePath(`/list-item/${id}`)
   revalidatePath("/")
+}
+
+export async function deleteListTile(formData: FormData) {
+  const id = Number(formData.get("id"))
+  if (!id) return
+
+  // Items cascade via the foreign key; the store's price book is keyed by
+  // store name, not by tile, so it survives for the next list at this store.
+  await prisma.listTile.deleteMany({ where: { id } })
+  revalidatePath("/")
+  revalidatePath(`/list-item/${id}`)
 }
 
 export async function createListItem(formData: FormData) {
@@ -199,4 +215,32 @@ export async function lookupMissingPrices(formData: FormData) {
   }
 
   revalidatePath(`/list-item/${listTileID}`)
+}
+
+export async function getPriceSearchInfo(listTileID: number | string) {
+  const id = Number(listTileID)
+  if (!id) return { supported: false, store: null as string | null }
+  const tile = await prisma.listTile.findUnique({
+    where: { id },
+    select: { store: true },
+  })
+  if (!tile) return { supported: false, store: null as string | null }
+  const supported = SUPPORTED_SEARCH_STORES.includes(tile.store)
+  return { supported, store: supported ? tile.store : null }
+}
+
+export async function searchStoreProductsAction(
+  listTileID: number | string,
+  query: string
+) {
+  const id = Number(listTileID)
+  const q = query.trim()
+  if (!id || q.length < 2) return []
+  const tile = await prisma.listTile.findUnique({
+    where: { id },
+    select: { store: true },
+  })
+  if (!tile || !SUPPORTED_SEARCH_STORES.includes(tile.store)) return []
+  const results = await searchStoreProducts(tile.store, q)
+  return results.slice(0, 15)
 }

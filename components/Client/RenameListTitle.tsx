@@ -1,20 +1,31 @@
 "use client"
 
-import { useRef } from "react"
-import { Check, X } from "lucide-react"
-import { updateListTile } from "@/app/actions"
-import { STORES } from "@/lib/stores"
+import { useRef, useTransition } from "react"
+import { Check, Trash2, X } from "lucide-react"
+import { deleteListTile, updateListTile } from "@/app/actions"
+import StoreSelect from "@/components/Client/StoreSelect"
 
 type Props = {
   id: number
   store: string
 }
 
-const fieldClass =
-  "flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
-
 export default function RenameListTitle({ id, store }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const [, startTransition] = useTransition()
+
+  // Same delete as the tile dialog on the home grid: a whole list goes with
+  // all its items, so it asks first. The store's price book survives.
+  const handleDelete = () => {
+    if (!window.confirm(`Delete the ${store} list and all its items? This can't be undone.`))
+      return
+    const formData = new FormData()
+    formData.set("id", String(id))
+    startTransition(async () => {
+      await deleteListTile(formData)
+      dialogRef.current?.close()
+    })
+  }
 
   return (
     <>
@@ -39,23 +50,22 @@ export default function RenameListTitle({ id, store }: Props) {
           className="flex flex-col gap-3"
         >
           <input type="hidden" name="id" value={id} />
-          <label className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-neutral-500">Store:</span>
-            <input
-              name="store"
-              defaultValue={store}
-              list="store-options"
-              className={fieldClass}
-            />
-            <datalist id="store-options">
-              {STORES.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          </label>
+          <StoreSelect defaultValue={store} />
 
-          <div className="mt-10 flex justify-end">
-            <button type="submit" aria-label="Save" className="cursor-pointer">
+          <div className="mt-10 flex items-center justify-between">
+            <button
+              type="button"
+              aria-label="Delete list"
+              onClick={handleDelete}
+              className="flex items-center justify-center rounded-full bg-red-100 p-2 text-red-700"
+            >
+              <Trash2 />
+            </button>
+            <button
+              type="submit"
+              aria-label="Save"
+              className="flex items-center justify-center rounded-full bg-rose-100 p-2 text-rose-900"
+            >
               <Check />
             </button>
           </div>

@@ -1,54 +1,96 @@
 "use client"
 
-import { useOptimistic, useRef, useState, useTransition } from "react"
+import { useEffect, useOptimistic, useRef, useState, useTransition } from "react"
 import { Check, CircleCheck, Trash2, X } from "lucide-react"
 import { deleteListItem, toggleListItem, updateListItem } from "@/app/actions"
-import { predictUnit, UNIT_FORMS } from "@/lib/units"
 import { formatPrice } from "@/lib/prices"
-import { useDeleteMode } from "./DeleteModeProvider"
-import { usePendingDelete } from "./PendingDeleteProvider"
-
-type Props = {
-  id: number
-  title: string
-  brand?: string | null
-  qty: number
-  unit?: string | null
-  completed: boolean
-  listTileID: number
-  price?: number | null
-}
+import { UNIT_FORMS, predictUnit } from "@/lib/units"
+import { useDeleteMode } from "@/components/Client/DeleteModeProvider"
+import { usePendingDelete } from "@/components/Client/PendingDeleteProvider"
+import ProductSearch from "@/components/Client/ProductSearch"
+import type { PickerProduct } from "@/lib/price-fetch"
 
 const fieldClass =
   "flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
 
-export default function ItemRow({ id, title, brand, qty, unit, completed, listTileID, price }: Props) {
+const unitForms = [...new Set(Object.values(UNIT_FORMS).flat())]
+
+type Props = {
+  id: number
+  title: string
+  brand: string | null
+  qty: number
+  unit: string | null
+  completed: boolean
+  listTileID: number
+  price: number | null
+}
+
+export default function ItemRow({
+  id,
+  title,
+  brand,
+  qty,
+  unit,
+  completed,
+  listTileID,
+  price,
+}: Props) {
   const { deleteMode, selectedIds, toggleSelected } = useDeleteMode()
   const { stageDeletion, isStaged } = usePendingDelete()
-  const selected = selectedIds.includes(id)
-
-  const [optimisticCompleted, setOptimisticCompleted] = useOptimistic(completed)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  const brandInputRef = useRef<HTMLInputElement>(null)
+  const qtyInputRef = useRef<HTMLInputElement>(null)
+  const unitInputRef = useRef<HTMLInputElement>(null)
+  const priceInputRef = useRef<HTMLInputElement>(null)
+  const lastAutoUnit = useRef<string>("")
   const [, startTransition] = useTransition()
+  const [optimisticCompleted, addOptimistic] = useOptimistic(
+    completed,
+    (_current: boolean, next: boolean) => next
+  )
 
   const [offset, setOffset] = useState(0)
   const touchStartX = useRef<number | null>(null)
-  const touchStartY = useRef<number | null>(null)
-  const justSwipedAt = useRef(0)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null)
+  const justSwipedAt = useRef(0)
 
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const titleRef = useRef<HTMLInputElement>(null)
-  const qtyRef = useRef<HTMLInputElement>(null)
-  const unitRef = useRef<HTMLInputElement>(null)
-  const lastAutoUnit = useRef(unit ?? "")
+  const selected = selectedIds.includes(id)
 
-  function handleToggle() {
-    if (deleteMode) {
-      toggleSelected(id)
-      return
+  useEffect(() => {
+    const titleInput = titleInputRef.current
+    const qtyInput = qtyInputRef.current
+    const unitInput = unitInputRef.current
+    if (!titleInput || !qtyInput || !unitInput) return
+
+    const updatePrediction = () => {
+      const predicted = predictUnit(titleInput.value, Number(qtyInput.value) || 1)
+      const current = unitInput.value
+      if (predicted && (current === "" || current === lastAutoUnit.current)) {
+        unitInput.dataset.newUnit = predicted
+        lastAutoUnit.current = predicted
+      } else {
+        unitInput.dataset.newUnit = current
+      }
     }
+    const onUnitInput = () => {
+      unitInput.dataset.newUnit = unitInput.value
+    }
+    titleInput.addEventListener("input", updatePrediction)
+    qtyInput.addEventListener("input", updatePrediction)
+    unitInput.addEventListener("input", onUnitInput)
+    return () => {
+      titleInput.removeEventListener("input", updatePrediction)
+      qtyInput.removeEventListener("input", updatePrediction)
+      unitInput.removeEventListener("input", onUnitInput)
+    }
+  }, [])
+
+  const toggleCompleted = () => {
     startTransition(async () => {
-      setOptimisticCompleted(!optimisticCompleted)
+      addOptimistic(!optimisticCompleted)
       const formData = new FormData()
       formData.set("id", String(id))
       formData.set("listTileID", String(listTileID))
@@ -56,197 +98,262 @@ export default function ItemRow({ id, title, brand, qty, unit, completed, listTi
     })
   }
 
-  function handleRowClick() {
-    if (Date.now() - justSwipedAt.current < 350) return
-    handleToggle()
-  }
+  const openEdit = () => dialogRef.current?.showModal()
 
-  function openEdit() {
-    if (deleteMode) return
-    dialogRef.current?.showModal()
-  }
-
-  function handleDelete() {
-    dialogRef.current?.close()
+  const stageThisDeletion = () => {
     const formData = new FormData()
     formData.set("id", String(id))
     formData.set("listTileID", String(listTileID))
     stageDeletion({
       ids: [id],
-      label: `Deleted "${title}"`,
+      label: "Item deleted",
       commit: async () => {
         await deleteListItem(formData)
       },
     })
   }
 
-  function refreshPrediction() {
-    const predicted = predictUnit(titleRef.current?.value ?? "", Number(qtyRef.current?.value) || 1)
-    const current = unitRef.current?.value ?? ""
-    if (unitRef.current && (current === "" || current.toLowerCase() === lastAutoUnit.current.toLowerCase())) {
-      unitRef.current.value = predicted
+  const handlePick = (product: PickerProduct) => {
+    // A pick adopts the product's identity — title, brand, size, and price
+    // when the store serves one. A priceless pick leaves the price field
+    // untouched. The fields stay editable, and nothing saves until the
+    // check is tapped.
+    if (titleInputRef.current) titleInputRef.current.value = product.title
+    if (brandInputRef.current) brandInputRef.current.value = product.brand ?? ""
+    if (priceInputRef.current && product.price != null) {
+      priceInputRef.current.value = product.price.toFixed(2)
     }
-    lastAutoUnit.current = predicted
+    if (product.itemQty != null && product.itemUnit) {
+      if (qtyInputRef.current) qtyInputRef.current.value = String(product.itemQty)
+      if (unitInputRef.current) {
+        unitInputRef.current.value = product.itemUnit
+        unitInputRef.current.dataset.newUnit = product.itemUnit
+      }
+    }
   }
 
-  function clearLongPress() {
+  const handleEditSave = async (formData: FormData) => {
+    const newUnit = unitInputRef.current?.dataset.newUnit
+    if (newUnit !== undefined) formData.set("unit", newUnit)
+    await updateListItem(formData)
+    dialogRef.current?.close()
+  }
+
+  const handleDialogDelete = () => {
+    stageThisDeletion()
+    dialogRef.current?.close()
+  }
+
+  const cancelLongPress = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
     }
   }
 
-  function handleTouchStart(e: React.TouchEvent) {
-    const touch = e.touches[0]
-    touchStartX.current = touch.clientX
-    touchStartY.current = touch.clientY
-    clearLongPress()
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0]
+    touchStartX.current = t.clientX
+    pressOrigin.current = { x: t.clientX, y: t.clientY }
+    cancelLongPress()
     if (!deleteMode) {
-      longPressTimer.current = setTimeout(() => {
-        justSwipedAt.current = Date.now()
-        openEdit()
-      }, 500)
+      longPressTimer.current = setTimeout(openEdit, 500)
     }
   }
 
-  function handleTouchMove(e: React.TouchEvent) {
-    if (touchStartX.current === null || touchStartY.current === null) return
-    const touch = e.touches[0]
-    const dx = touch.clientX - touchStartX.current
-    const dy = touch.clientY - touchStartY.current
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearLongPress()
-    if (deleteMode) return
-    setOffset(Math.max(-120, Math.min(dx, 120)))
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current == null) return
+    const t = e.touches[0]
+    const origin = pressOrigin.current
+    if (
+      origin &&
+      (Math.abs(t.clientX - origin.x) > 10 || Math.abs(t.clientY - origin.y) > 10)
+    ) {
+      cancelLongPress()
+    }
+    const dx = Math.max(-120, Math.min(120, t.clientX - touchStartX.current))
+    setOffset(dx)
   }
 
-  function handleTouchEnd() {
-    clearLongPress()
+  const onTouchEnd = () => {
+    cancelLongPress()
+    touchStartX.current = null
+    pressOrigin.current = null
     if (offset > 70) {
+      if (!deleteMode) toggleCompleted()
       justSwipedAt.current = Date.now()
-      handleToggle()
     } else if (offset < -70) {
+      stageThisDeletion()
       justSwipedAt.current = Date.now()
-      handleDelete()
     }
     setOffset(0)
-    touchStartX.current = null
-    touchStartY.current = null
   }
+
+  const onClick = () => {
+    if (Date.now() - justSwipedAt.current < 350) return
+    if (deleteMode) toggleSelected(id)
+    else toggleCompleted()
+  }
+
+  const qtyLabel = `${qty}${unit ? ` ${unit}` : ""}`
 
   if (isStaged(id)) return null
 
   return (
-    <div className="relative isolate mb-px">
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-lg bg-neutral-700">
-        {offset > 8 && (
-          <CircleCheck
-            className={`absolute left-4 top-1/2 -translate-y-1/2 ${
-              offset > 70 ? "scale-110 text-white" : "text-neutral-400"
-            }`}
-          />
-        )}
-        {offset < -8 && (
-          <Trash2
-            className={`absolute right-4 top-1/2 -translate-y-1/2 ${
-              offset < -70 ? "scale-110 text-white" : "text-neutral-400"
-            }`}
-          />
-        )}
-      </div>
+    <div className="relative isolate mb-px overflow-hidden rounded-lg bg-neutral-700">
+      {Math.abs(offset) > 8 && (
+        <>
+          <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-white">
+            <CircleCheck className={offset > 70 ? "scale-110" : undefined} />
+          </span>
+          <span className="absolute inset-y-0 right-0 flex items-center pr-4 text-white">
+            <Trash2 className={offset < -70 ? "scale-110" : undefined} />
+          </span>
+        </>
+      )}
 
       <div
-        className={`relative z-10 flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 ring-1 ring-rose-200 ${
-          selected ? "bg-red-100" : "bg-white hover:bg-rose-100"
-        }`}
-        style={{ transform: `translateX(${offset}px)` }}
-        onClick={handleRowClick}
+        role="button"
+        onClick={onClick}
         onContextMenu={(e) => {
           e.preventDefault()
           openEdit()
         }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={() => {
-          clearLongPress()
-          setOffset(0)
-        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        className={`relative flex cursor-pointer items-center gap-3 px-4 py-3 ring-1 ring-rose-200 touch-pan-y ${
+          selected ? "bg-red-100" : "bg-white"
+        }`}
+        style={{ transform: `translateX(${offset}px)` }}
       >
         <input
           type="checkbox"
-          checked={deleteMode ? selected : optimisticCompleted}
-          onChange={handleToggle}
+          checked={optimisticCompleted}
           onClick={(e) => e.stopPropagation()}
-          className={`h-5 w-5 shrink-0 ${deleteMode ? "accent-red-600" : "accent-rose-600"}`}
+          onChange={toggleCompleted}
+          className="h-5 w-5 shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <span className={optimisticCompleted ? "text-neutral-400 line-through" : ""}>
+          <p className={optimisticCompleted ? "line-through opacity-60" : undefined}>
             {title}
-          </span>
-          {brand && <span className="text-sm text-neutral-500"> · {brand}</span>}
-          <span className="block text-sm text-neutral-500">
-            {qty}
-            {unit ? ` ${unit}` : ""}
-            {price !== null && price !== undefined && ` · ${formatPrice(price)} each`}
-          </span>
+            {brand && <span className="text-neutral-500"> · {brand}</span>}
+          </p>
+          <p className="text-sm text-neutral-500">
+            {qtyLabel}
+            {price != null && ` · ${formatPrice(price)} each`}
+          </p>
         </div>
-        {price !== null && price !== undefined && (
-          <span className="shrink-0 text-sm font-semibold text-neutral-600">
-            {formatPrice(price * qty)}
-          </span>
+        {price != null && (
+          <span className="shrink-0 font-medium">{formatPrice(price * qty)}</span>
         )}
       </div>
 
-      <dialog ref={dialogRef} className="pt-3">
-        <div className="flex justify-end">
-          <button type="button" onClick={() => dialogRef.current?.close()} aria-label="Close">
-            <X />
-          </button>
-        </div>
-
-        <form
-          action={updateListItem}
-          onSubmit={() => dialogRef.current?.close()}
-          className="flex flex-col gap-3"
-        >
+      <dialog ref={dialogRef}>
+        <form action={handleEditSave} className="flex w-[min(92vw,24rem)] flex-col">
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="listTileID" value={listTileID} />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => dialogRef.current?.close()}
+              className="text-neutral-500"
+            >
+              <X />
+            </button>
+          </div>
 
-          <label className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-neutral-500">Item:</span>
-            <input ref={titleRef} name="title" defaultValue={title} onChange={refreshPrediction} className={fieldClass} />
-          </label>
-
-          <label className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-neutral-500">Brand:</span>
-            <input name="brand" defaultValue={brand ?? ""} className={fieldClass} />
-          </label>
-
-          <label className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-neutral-500">Qty:</span>
-            <input ref={qtyRef} name="qty" type="number" step="any" defaultValue={qty} onChange={refreshPrediction} className={fieldClass} />
-          </label>
-
-          <label className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-neutral-500">Unit:</span>
-            <input ref={unitRef} name="unit" defaultValue={unit ?? ""} list={`unit-options-${id}`} className={fieldClass} />
-            <datalist id={`unit-options-${id}`}>
-              {Object.keys(UNIT_FORMS).map((u) => (
-                <option key={u} value={u} />
+          <div className="mt-2 flex items-center gap-2">
+            <label htmlFor={`edit-item-${id}`} className="w-12 shrink-0 text-neutral-500">
+              Item
+            </label>
+            <input
+              id={`edit-item-${id}`}
+              ref={titleInputRef}
+              name="title"
+              defaultValue={title}
+              className={fieldClass}
+              autoComplete="off"
+            />
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <label htmlFor={`edit-brand-${id}`} className="w-12 shrink-0 text-neutral-500">
+              Brand
+            </label>
+            <input
+              id={`edit-brand-${id}`}
+              ref={brandInputRef}
+              name="brand"
+              defaultValue={brand ?? ""}
+              className={fieldClass}
+              autoComplete="off"
+            />
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <label htmlFor={`edit-qty-${id}`} className="w-12 shrink-0 text-neutral-500">
+              Qty
+            </label>
+            <input
+              id={`edit-qty-${id}`}
+              ref={qtyInputRef}
+              name="qty"
+              type="number"
+              min="0"
+              step="any"
+              defaultValue={qty}
+              className="w-20 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
+            />
+            <label htmlFor={`edit-unit-${id}`} className="shrink-0 text-neutral-500">
+              Unit
+            </label>
+            <input
+              id={`edit-unit-${id}`}
+              ref={unitInputRef}
+              name="unit"
+              defaultValue={unit ?? ""}
+              list={`unit-forms-edit-${id}`}
+              className={fieldClass}
+              autoComplete="off"
+            />
+            <datalist id={`unit-forms-edit-${id}`}>
+              {unitForms.map((form) => (
+                <option key={form} value={form} />
               ))}
             </datalist>
-          </label>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <label htmlFor={`edit-price-${id}`} className="w-12 shrink-0 text-neutral-500">
+              Price
+            </label>
+            <input
+              id={`edit-price-${id}`}
+              ref={priceInputRef}
+              name="price"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={price ?? ""}
+              className={fieldClass}
+            />
+          </div>
 
-          <label className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-neutral-500">Price:</span>
-            <input name="price" type="number" step="0.01" min="0" defaultValue={price ?? ""} className={fieldClass} />
-          </label>
+          <ProductSearch listTileID={listTileID} onPick={handlePick} />
 
           <div className="mt-10 flex items-center justify-between">
-            <button type="button" onClick={handleDelete} aria-label="Delete item" className="cursor-pointer text-red-600">
+            <button
+              type="button"
+              aria-label="Delete item"
+              onClick={handleDialogDelete}
+              className="flex items-center justify-center rounded-full bg-red-100 p-2 text-red-700"
+            >
               <Trash2 />
             </button>
-            <button type="submit" aria-label="Save" className="cursor-pointer">
+            <button
+              type="submit"
+              aria-label="Save changes"
+              className="flex items-center justify-center rounded-full bg-rose-100 p-2 text-rose-900"
+            >
               <Check />
             </button>
           </div>
