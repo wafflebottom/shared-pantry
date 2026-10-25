@@ -1,6 +1,8 @@
 import Link from "next/link";
 import RenameListTitle from "../Client/RenameListTitle";
 import ListNavDrawer from "../Client/ListNavDrawer";
+import ProfileSwitcher from "../Client/ProfileSwitcher";
+import { getCurrentProfile, getProfiles } from "@/lib/profiles";
 import { formatPrice } from "@/lib/prices";
 
 type Props = {
@@ -29,12 +31,16 @@ function CostCard({ estimatedTotal, pricedCount, itemCount }: { estimatedTotal: 
     )
 }
 
-export function Header ({ bis_list_page = false, listTileID, listStore, lists, estimatedTotal, pricedCount, itemCount }: Props) {
+export async function Header ({ bis_list_page = false, listTileID, listStore, lists, estimatedTotal, pricedCount, itemCount }: Props) {
     const showCost =
         estimatedTotal !== undefined &&
         pricedCount !== undefined &&
         itemCount !== undefined &&
         itemCount > 0
+
+    // The device's identity lives in the Header, so every page gets it.
+    const profiles = await getProfiles()
+    const currentProfile = await getCurrentProfile()
 
     return (
         <div className="fixed left-0 top-0 z-10 w-full bg-linear-to-b from-rose-300 pb-2 pt-3 font-impact text-sm backdrop-blur-2xl sm:pb-3 sm:pt-8">
@@ -52,12 +58,13 @@ export function Header ({ bis_list_page = false, listTileID, listStore, lists, e
                     <RenameListTitle id={listTileID} store={listStore ?? ""} />
                 </div> : <div className="flex-1" />}
 
-                <div className="flex shrink-0 justify-end">
+                <div className="flex shrink-0 items-center justify-end gap-2">
                     {showCost && (
                         <div className="portrait:hidden">
                             <CostCard estimatedTotal={estimatedTotal} pricedCount={pricedCount} itemCount={itemCount} />
                         </div>
                     )}
+                    <ProfileSwitcher profiles={profiles} currentProfile={currentProfile} />
                 </div>
             </div>
 

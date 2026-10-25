@@ -8,12 +8,15 @@ import { UNIT_FORMS, predictUnit } from "@/lib/units"
 import { useDeleteMode } from "@/components/Client/DeleteModeProvider"
 import { usePendingDelete } from "@/components/Client/PendingDeleteProvider"
 import ProductSearch from "@/components/Client/ProductSearch"
+import ProfileAvatar from "@/components/ui/ProfileAvatar"
 import type { PickerProduct } from "@/lib/price-fetch"
 
 const fieldClass =
   "flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
 
 const unitForms = [...new Set(Object.values(UNIT_FORMS).flat())]
+
+type Attribution = { name: string; color: string } | null
 
 type Props = {
   id: number
@@ -24,6 +27,8 @@ type Props = {
   completed: boolean
   listTileID: number
   price: number | null
+  requestedBy: Attribution
+  checkedOffBy: Attribution
 }
 
 export default function ItemRow({
@@ -35,6 +40,8 @@ export default function ItemRow({
   completed,
   listTileID,
   price,
+  requestedBy,
+  checkedOffBy,
 }: Props) {
   const { deleteMode, selectedIds, toggleSelected } = useDeleteMode()
   const { stageDeletion, isStaged } = usePendingDelete()
@@ -197,6 +204,13 @@ export default function ItemRow({
 
   const qtyLabel = `${qty}${unit ? ` ${unit}` : ""}`
 
+  // Who the row is attributed to: the requester while active; the checker
+  // once completed — plus the requester too when they differ.
+  const showChecker = completed && checkedOffBy != null
+  const showRequester =
+    requestedBy != null &&
+    (!completed || !checkedOffBy || checkedOffBy.name !== requestedBy.name)
+
   if (isStaged(id)) return null
 
   return (
@@ -239,9 +253,19 @@ export default function ItemRow({
             {title}
             {brand && <span className="text-neutral-500"> · {brand}</span>}
           </p>
-          <p className="text-sm text-neutral-500">
-            {qtyLabel}
-            {price != null && ` · ${formatPrice(price)} each`}
+          <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-neutral-500">
+            <span>{qtyLabel}</span>
+            {price != null && <span>· {formatPrice(price)} each</span>}
+            {showRequester && requestedBy && (
+              <span className="inline-flex items-center gap-1">
+                · <ProfileAvatar profile={requestedBy} /> {requestedBy.name}
+              </span>
+            )}
+            {showChecker && checkedOffBy && (
+              <span className="inline-flex items-center gap-1">
+                · ✓ <ProfileAvatar profile={checkedOffBy} /> {checkedOffBy.name}
+              </span>
+            )}
           </p>
         </div>
         {price != null && (

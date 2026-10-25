@@ -16,16 +16,30 @@ model ListTile {
 }
 
 model ListItem {
-  id         Int      @id @default(autoincrement())
-  title      String
-  brand      String?
-  unit       String?
-  qty        Float    @default(1)
-  listTileID Int
-  listTile   ListTile @relation(fields: [listTileID], references: [id], onDelete: Cascade)
-  completed  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  title          String
+  brand          String?
+  unit           String?
+  qty            Float    @default(1)
+  listTileID     Int
+  listTile       ListTile @relation(fields: [listTileID], references: [id], onDelete: Cascade)
+  completed      Boolean  @default(false)
+  requestedByID  Int?
+  requestedBy    Profile? @relation("RequestedBy", fields: [requestedByID], references: [id], onDelete: SetNull)
+  checkedOffByID Int?
+  checkedOffBy   Profile? @relation("CheckedOffBy", fields: [checkedOffByID], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Profile {
+  id         Int        @id @default(autoincrement())
+  name       String     @unique
+  color      String
+  requested  ListItem[] @relation("RequestedBy")
+  checkedOff ListItem[] @relation("CheckedOffBy")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 }
 
 model StorePrice {

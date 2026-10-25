@@ -1,8 +1,11 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 import { prisma } from "@/lib/prisma"
 import { itemKeyFor } from "@/lib/prices"
+import { PROFILE_COOKIE, getCurrentProfile } from "@/lib/profiles"
+import { DEFAULT_PROFILE_COLOR, PROFILE_COLORS } from "@/lib/profile-colors"
 import {
   PRICE_FETCHERS,
   SUPPORTED_SEARCH_STORES,
@@ -12,9 +15,10 @@ import {
 
 export async function createListTile(formData: FormData) {
   const store = String(formData.get("store") ?? "").trim()
-  if (!store) return
-  await prisma.listTile.create({ data: { store } })
+  if (!store) return null
+  const tile = await prisma.listTile.create({ data: { store } })
   revalidatePath("/")
+  return tile.id
 }
 
 export async function updateListTile(formData: FormData) {
@@ -37,6 +41,46 @@ export async function deleteListTile(formData: FormData) {
   revalidatePath(`/list-item/${id}`)
 }
 
+// Claims this device for a profile: the cookie is how the server knows
+// who is acting from then on.
+export async function setCurrentProfile(formData: FormData) {
+  const id = Number(formData.get("profileId"))
+  if (!id) return
+  const profile = await prisma.profile.findUnique({ where: { id } })
+  if (!profile) return
+  const jar = await cookies()
+  jar.set(PROFILE_COOKIE, String(id), {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  })
+  revalidatePath("/", "layout")
+}
+
+// Adds a profile and claims this device for it. Adding a name that
+// already exists just claims that profile instead of erroring on the
+// unique constraint.
+export async function createProfile(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim()
+  const color = String(formData.get("color") ?? "")
+  if (!name) return
+  const validColor = (Object.values(PROFILE_COLORS) as string[]).includes(color)
+    ? color
+    : DEFAULT_PROFILE_COLOR
+
+  const existing = await prisma.profile.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+  })
+  const profile =
+    existing ?? (await prisma.profile.create({ data: { name, color: validColor } }))
+
+  const jar = await cookies()
+  jar.set(PROFILE_COOKIE, String(profile.id), {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  })
+  revalidatePath("/", "layout")
+}
+
 export async function createListItem(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim()
   const listTileID = Number(formData.get("listTileID"))
@@ -47,6 +91,8 @@ export async function createListItem(formData: FormData) {
   const brandRaw = String(formData.get("brand") ?? "").trim()
   const priceRaw = String(formData.get("price") ?? "").trim()
 
+  const profile = await getCurrentProfile()
+
   await prisma.listItem.create({
     data: {
       title,
@@ -54,6 +100,7 @@ export async function createListItem(formData: FormData) {
       qty: qtyRaw ? Number(qtyRaw) : 1,
       unit: unitRaw || null,
       listTile: { connect: { id: listTileID } },
+      requestedBy: profile ? { connect: { id: profile.id } } : undefined,
     },
   })
 
@@ -134,7 +181,21 @@ export async function toggleListItem(formData: FormData) {
   const item = await prisma.listItem.findUnique({ where: { id }, select: { completed: true } })
   if (!item) return
 
-  await prisma.listItem.update({ where: { id }, data: { completed: !item.completed } })
+  // Checking an item off stamps who did it; un-checking clears the stamp.
+  const nowCompleted = !item.completed
+  const profile = nowCompleted ? await getCurrentProfile() : null
+
+  await prisma.listItem.update({
+    where: { id },
+    data: {
+      completed: nowCompleted,
+      checkedOffBy: nowCompleted
+        ? profile
+          ? { connect: { id: profile.id } }
+          : undefined
+        : { disconnect: true },
+    },
+  })
   if (listTileID) revalidatePath(`/list-item/${listTileID}`)
 }
 
@@ -173,7 +234,7 @@ export async function resetCompletedItems(formData: FormData) {
 
   await prisma.listItem.updateMany({
     where: { listTileID, completed: true },
-    data: { completed: false },
+    data: { completed: false, checkedOffByID: null },
   })
   revalidatePath(`/list-item/${listTileID}`)
 }

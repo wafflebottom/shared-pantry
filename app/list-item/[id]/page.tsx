@@ -38,6 +38,10 @@ export default async function ListItem({
     include: {
       items: {
         orderBy: [{ completed: "asc" }, { createdAt: "asc" }],
+        include: {
+          requestedBy: { select: { name: true, color: true } },
+          checkedOffBy: { select: { name: true, color: true } },
+        },
       },
     },
   })
@@ -104,6 +108,8 @@ export default async function ListItem({
                   completed={item.completed}
                   listTileID={tile.id}
                   price={priceFor(item)}
+                  requestedBy={item.requestedBy}
+                  checkedOffBy={item.checkedOffBy}
                 />
               ))}
             </div>
@@ -131,6 +137,8 @@ export default async function ListItem({
                       completed={item.completed}
                       listTileID={tile.id}
                       price={priceFor(item)}
+                      requestedBy={item.requestedBy}
+                      checkedOffBy={item.checkedOffBy}
                     />
                   ))}
                 </div>

@@ -2,7 +2,8 @@
 
 import { useRef } from "react"
 import Link from "next/link"
-import { House, Menu, X } from "lucide-react"
+import { House, Menu, Plus, X } from "lucide-react"
+import CreateListDialog from "@/components/Client/CreateListDialog"
 
 type Props = {
   lists: { id: number; store: string }[]
@@ -11,6 +12,7 @@ type Props = {
 
 export default function ListNavDrawer({ lists, currentListID }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const createDialogRef = useRef<HTMLDialogElement>(null)
   const close = () => dialogRef.current?.close()
 
   return (
@@ -54,8 +56,23 @@ export default function ListNavDrawer({ lists, currentListID }: Props) {
               {list.store}
             </Link>
           ))}
+
+          <div className="my-2 h-px bg-rose-200" />
+
+          <button
+            type="button"
+            onClick={() => {
+              close()
+              createDialogRef.current?.showModal()
+            }}
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-gray-700 hover:bg-rose-50"
+          >
+            <Plus className="h-5 w-5" /> New list
+          </button>
         </nav>
       </dialog>
+
+      <CreateListDialog dialogRef={createDialogRef} />
     </>
   )
 }
