@@ -2,15 +2,16 @@
 
 import { useRef } from "react"
 import Link from "next/link"
-import { House, Menu, Plus, X } from "lucide-react"
+import { House, ListChecks, Menu, Plus, X } from "lucide-react"
 import CreateListDialog from "@/components/Client/CreateListDialog"
 
 type Props = {
   lists: { id: number; store: string }[]
   currentListID?: number
+  currentFullList?: boolean
 }
 
-export default function ListNavDrawer({ lists, currentListID }: Props) {
+export default function ListNavDrawer({ lists, currentListID, currentFullList }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const createDialogRef = useRef<HTMLDialogElement>(null)
   const close = () => dialogRef.current?.close()
@@ -40,6 +41,10 @@ export default function ListNavDrawer({ lists, currentListID }: Props) {
         <nav className="flex flex-col px-2 pb-4">
           <Link href="/" onClick={close} className="flex items-center gap-2 rounded-md px-3 py-2 text-gray-700 hover:bg-rose-50">
             <House className="h-5 w-5" /> Home
+          </Link>
+
+          <Link href="/full-list" onClick={close} className={`flex items-center gap-2 rounded-md px-3 py-2 hover:bg-rose-50 ${currentFullList ? "bg-rose-100 font-semibold text-rose-900" : "text-gray-700"}`}>
+            <ListChecks className="h-5 w-5" /> Full List
           </Link>
 
           <div className="my-2 h-px bg-rose-200" />

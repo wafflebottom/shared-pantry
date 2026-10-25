@@ -25,6 +25,11 @@ export const KNOWN_BRANDS: string[] = [
   "365 by Whole Foods Market",
   "Whole Foods Market",
   "Horizon Organic",
+  "Good & Gather",
+  "Market Pantry",
+  "Favorite Day",
+  "Nate's Honey",
+  "Savannah Bee Company",
 ]
 
 const BRANDS_LONGEST_FIRST = [...KNOWN_BRANDS].sort((a, b) => b.length - a.length)

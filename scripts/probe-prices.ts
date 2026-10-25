@@ -1,5 +1,8 @@
-// Probe v4: parser with JSON-unescape + storefront category discovery.
+// Probe v5: validate the storefront SEARCH route with the proven parser.
 // Usage: npx tsx scripts/probe-prices.ts
+export {} // module scope: keeps this file's `main` out of the global scope
+
+const STORE_ID = "48664081"
 
 const HEADERS = {
   "User-Agent":
@@ -22,29 +25,26 @@ function parseItemPrices(html: string): Pair[] {
   return pairs
 }
 
-async function main() {
-  // Control: the known dairy category
-  const catUrl = "https://shop.naturalgrocers.com/category/dairy%20%26%20eggs-960"
-  const res = await fetch(catUrl, { headers: HEADERS })
-  const html = await res.text()
-  const pairs = parseItemPrices(html)
-  console.log(`\ncontrol: dairy category`)
-  console.log(`  status ${res.status} · ${html.length} bytes · ${pairs.length} item/price pairs`)
-  for (const p of pairs.slice(0, 6)) console.log(`    ${p.name} — $${p.price.toFixed(2)}`)
-  for (const p of pairs.filter((p) => /organic valley whole milk/i.test(p.name))) {
-    console.log(`  ★ TEST ITEM: ${p.name} — $${p.price.toFixed(2)}`)
+async function check(term: string) {
+  const url = `https://shop.naturalgrocers.com/convenience/store/${STORE_ID}/search/${encodeURIComponent(term)}?attr_src=home&disable_spell_check=false`
+  try {
+    const res = await fetch(url, { headers: HEADERS })
+    const html = await res.text()
+    const pairs = parseItemPrices(html)
+    console.log(`\nsearch "${term}"`)
+    console.log(`  status ${res.status} · ${html.length} bytes · ${pairs.length} item/price pairs`)
+    for (const p of pairs.slice(0, 8)) console.log(`    ${p.name} — $${p.price.toFixed(2)}`)
+    return pairs.length
+  } catch (err) {
+    console.log(`\nsearch "${term}"\n  FETCH FAILED: ${err instanceof Error ? err.message : String(err)}`)
+    return 0
   }
+}
 
-  // Category discovery from the storefront home page
-  const home = await fetch("https://shop.naturalgrocers.com/", { headers: HEADERS })
-  const homeHtml = await home.text()
-  const cats = [
-    ...new Set(
-      [...homeHtml.matchAll(/\/category\/[a-z0-9%&\-]+/gi)].map((m) => m[0])
-    ),
-  ]
-  console.log(`\nstorefront categories found: ${cats.length}`)
-  for (const c of cats) console.log(`  ${c}`)
+async function main() {
+  await check("contented hen eggs")
+  await check("organic valley whole milk")
+  await check("eggs")
 }
 
 main()

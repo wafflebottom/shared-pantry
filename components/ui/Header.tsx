@@ -7,6 +7,7 @@ import { formatPrice } from "@/lib/prices";
 
 type Props = {
     bis_list_page?: boolean,
+    bis_full_list_page?: boolean,
     listTileID?: number,
     listStore?: string,
     lists: { id: number; store: string }[],
@@ -31,7 +32,7 @@ function CostCard({ estimatedTotal, pricedCount, itemCount }: { estimatedTotal: 
     )
 }
 
-export async function Header ({ bis_list_page = false, listTileID, listStore, lists, estimatedTotal, pricedCount, itemCount }: Props) {
+export async function Header ({ bis_list_page = false, bis_full_list_page = false, listTileID, listStore, lists, estimatedTotal, pricedCount, itemCount }: Props) {
     const showCost =
         estimatedTotal !== undefined &&
         pricedCount !== undefined &&
@@ -46,7 +47,7 @@ export async function Header ({ bis_list_page = false, listTileID, listStore, li
         <div className="fixed left-0 top-0 z-10 w-full bg-linear-to-b from-rose-300 pb-2 pt-3 font-impact text-sm backdrop-blur-2xl sm:pb-3 sm:pt-8">
             <div className="flex items-center gap-4 px-2">
                 <div className="flex shrink-0 items-center gap-2">
-                    <ListNavDrawer lists={lists} currentListID={listTileID} />
+                    <ListNavDrawer lists={lists} currentListID={listTileID} currentFullList={bis_full_list_page} />
                     <Link href="/">
                         <p className="font-sans text-rose-800">Shared</p>
                         <p className="font-mono font-bold text-rose-600 text-shadow-rose-900/20 text-shadow-lg">Pantry</p>
@@ -56,6 +57,9 @@ export async function Header ({ bis_list_page = false, listTileID, listStore, li
                 {bis_list_page && listTileID !== undefined ?
                 <div className="flex flex-1 justify-center">
                     <RenameListTitle id={listTileID} store={listStore ?? ""} />
+                </div> : bis_full_list_page ?
+                <div className="flex flex-1 justify-center">
+                    <span className="font-sans text-base font-bold text-rose-900">Full List</span>
                 </div> : <div className="flex-1" />}
 
                 <div className="flex shrink-0 items-center justify-end gap-2">

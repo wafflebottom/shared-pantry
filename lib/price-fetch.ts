@@ -8,6 +8,7 @@ import {
 import { bestMatch } from "@/lib/matching"
 import { naturalGrocersAdapter } from "@/lib/stores/natural-grocers"
 import { sproutsAdapter } from "@/lib/stores/sprouts"
+import { targetAdapter } from "@/lib/stores/target"
 import { wholeFoodsAdapter } from "@/lib/stores/whole-foods"
 
 
@@ -27,6 +28,7 @@ type PriceFetcher = (
 const STORE_ADAPTERS: Record<string, StoreAdapter> = {
   "Natural Grocers": naturalGrocersAdapter,
   Sprouts: sproutsAdapter,
+  Target: targetAdapter,
   "Whole Foods": wholeFoodsAdapter,
 }
 

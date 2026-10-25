@@ -41,6 +41,19 @@ export async function deleteListTile(formData: FormData) {
   revalidatePath(`/list-item/${id}`)
 }
 
+// Toggles whether a list's items appear in the Full List. The choice is
+// stored on the tile so it follows the user across devices.
+export async function setFullListInclude(formData: FormData) {
+  const id = Number(formData.get("id"))
+  const include = String(formData.get("include") ?? "") === "true"
+  if (!id) return
+  await prisma.listTile.update({
+    where: { id },
+    data: { includeInFullList: include },
+  })
+  revalidatePath("/full-list")
+}
+
 // Claims this device for a profile: the cookie is how the server knows
 // who is acting from then on.
 export async function setCurrentProfile(formData: FormData) {
@@ -171,6 +184,7 @@ export async function updateListItem(formData: FormData) {
   }
 
   if (listTileID) revalidatePath(`/list-item/${listTileID}`)
+  revalidatePath("/full-list")
 }
 
 export async function toggleListItem(formData: FormData) {
@@ -197,6 +211,7 @@ export async function toggleListItem(formData: FormData) {
     },
   })
   if (listTileID) revalidatePath(`/list-item/${listTileID}`)
+  revalidatePath("/full-list")
 }
 
 export async function deleteListItem(formData: FormData) {
@@ -206,6 +221,7 @@ export async function deleteListItem(formData: FormData) {
 
   await prisma.listItem.deleteMany({ where: { id } })
   if (listTileID) revalidatePath(`/list-item/${listTileID}`)
+  revalidatePath("/full-list")
 }
 
 export async function deleteListItems(formData: FormData) {

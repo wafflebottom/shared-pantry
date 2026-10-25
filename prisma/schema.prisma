@@ -8,11 +8,12 @@ datasource db {
 }
 
 model ListTile {
-  id        Int        @id @default(autoincrement())
-  store     String     @map("title")
-  items     ListItem[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id               Int        @id @default(autoincrement())
+  store            String     @map("title")
+  includeInFullList Boolean   @default(true)
+  items            ListItem[]
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 }
 
 model ListItem {
