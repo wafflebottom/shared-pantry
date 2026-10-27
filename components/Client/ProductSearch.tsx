@@ -85,7 +85,7 @@ export default function ProductSearch({ listTileID, onPick, inputRef }: Props) {
             }
           }}
           placeholder="Search products…"
-          className="flex-1 rounded-md bg-ck-bg px-2 py-1 text-ck-ink outline-none focus:bg-ck-surface focus:ring-1 focus:ring-ck-primary"
+          className="min-w-0 flex-1 rounded-md bg-ck-bg px-2 py-1 text-ck-ink outline-none focus:bg-ck-surface focus:ring-1 focus:ring-ck-primary"
         />
         <button
           type="button"

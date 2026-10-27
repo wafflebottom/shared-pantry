@@ -43,6 +43,14 @@ next-env.d.ts
 # local data & probe artifacts
 /data/
 ng-probe.html
+# Saved store-page probe dumps (can embed third-party keys)
+wm-*.html
+ks-*.html
+sprouts-probe*.json
+sprouts-probe.html
+sprouts-items-sample.json
+target-probe-honey.html
+target-redsky-honey.json
 
 # but the example env file is meant to be shared
 !.env.example

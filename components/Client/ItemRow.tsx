@@ -278,7 +278,7 @@ export default function ItemRow({
       </div>
 
       <dialog ref={dialogRef}>
-        <form action={handleEditSave} className="flex w-[min(92vw,24rem)] flex-col">
+        <form action={handleEditSave} className="flex w-full flex-col">
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="listTileID" value={listTileID} />
           <div className="flex justify-end">

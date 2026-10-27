@@ -81,7 +81,7 @@ export default function RequestNewListLine({ listTileID }: { listTileID: number 
       </button>
 
       <dialog ref={dialogRef}>
-        <form action={handleSubmit} className="flex w-[min(92vw,24rem)] flex-col">
+        <form action={handleSubmit} className="flex w-full flex-col">
           <input type="hidden" name="listTileID" value={listTileID} />
           <div className="flex justify-end">
             <button

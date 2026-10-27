@@ -203,9 +203,17 @@
 
 dialog {
   margin: auto;
+  /* The dialog itself owns the width so it can never exceed the viewport:
+     92vw on phones, capped at 24rem on wider screens, with padding that
+     shrinks on small screens. (Previously the form inside set the width
+     while the dialog added 24px of padding on each side, so on a phone
+     the dialog overflowed the right edge.) */
+  box-sizing: border-box;
+  width: min(92vw, 24rem);
+  max-width: calc(100vw - 1rem);
   border: 1px solid #E3DDC4;
   border-radius: 13px;
-  padding: 24px;
+  padding: clamp(16px, 4vw, 24px);
   background: #FFFEFA;
   color: #3D405B;
 }
