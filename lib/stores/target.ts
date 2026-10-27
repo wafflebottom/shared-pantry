@@ -1,4 +1,11 @@
-import type { ProductResult, StoreAdapter } from "@/lib/product"
+import { SIZE_UNIT_PATTERN, type ProductResult, type StoreAdapter } from "@/lib/product"
+import {
+  cookiesToHeader,
+  dedupeProducts,
+  fetchWithTimeout,
+  logAdapterFailure,
+  type JsonObj,
+} from "@/lib/stores/http"
 
 // Target storefront (RedSky API). Proven by probe Oct 24 2026 from Simon's
 // home connection: the search page is a shell, so the adapter replays the
@@ -25,8 +32,6 @@ const BROWSER_HEADERS = {
   Accept: "text/html,application/xhtml+xml",
   "Accept-Language": "en-US,en;q=0.9",
 }
-
-type JsonObj = Record<string, unknown>
 
 function decodeHtmlEntities(value: string): string {
   return value
@@ -58,7 +63,7 @@ function toProductName(rawTitle: string, brand: string | null): string {
     // " - Good & Gather (Packaging May Vary)" — but never strip a
     // parenthetical that holds the size, e.g. " - Brand (12ct)".
     const suffix = new RegExp(
-      `\\s*-\\s*${escapeRegExp(brand)}™?\\s*(\\((?!\\d+(?:\\.\\d+)?\\s*(?:gal|qt|pt|fl oz|oz|lb|ct|count|ea|each|l|ml|g)\\))[^)]*\\))?\\s*$`,
+      `\\s*-\\s*${escapeRegExp(brand)}™?\\s*(\\((?!\\d+(?:\\.\\d+)?\\s*(?:${SIZE_UNIT_PATTERN})\\))[^)]*\\))?\\s*$`,
       "i"
     )
     title = title.replace(suffix, "").trim()
@@ -67,7 +72,10 @@ function toProductName(rawTitle: string, brand: string | null): string {
   // trailing size instead of a dangling dash.
   title = title
     .replace(
-      /\s*-\s*(\d+(?:\.\d+)?\s*(?:gal|qt|pt|fl oz|oz|lb|ct|count|ea|each|l|ml|g))\s*$/i,
+      new RegExp(
+        `\\s*-\\s*(\\d+(?:\\.\\d+)?\\s*(?:${SIZE_UNIT_PATTERN}))\\s*$`,
+        "i"
+      ),
       " ($1)"
     )
     .trim()
@@ -79,20 +87,27 @@ function toProductName(rawTitle: string, brand: string | null): string {
 
 // A RedSky product: price is a number (current_retail), the brand is a
 // clean separate field (primary_brand.name), the size rides in the title.
+// One malformed title (e.g. an out-of-range HTML entity, which makes
+// String.fromCodePoint throw) skips just that item instead of emptying
+// the whole search.
 function toProductResult(item: JsonObj): ProductResult | null {
-  const itemObj = item.item as JsonObj | undefined
-  const productDesc = itemObj?.product_description as JsonObj | undefined
-  const rawTitle = productDesc?.title
-  if (typeof rawTitle !== "string" || !rawTitle) return null
-  const priceObj = item.price as JsonObj | undefined
-  const price = priceObj?.current_retail
-  if (typeof price !== "number" || !Number.isFinite(price)) return null
-  const primaryBrand = itemObj?.primary_brand as JsonObj | undefined
-  const brand =
-    typeof primaryBrand?.name === "string"
-      ? decodeHtmlEntities(primaryBrand.name)
-      : null
-  return { name: toProductName(rawTitle, brand), price }
+  try {
+    const itemObj = item.item as JsonObj | undefined
+    const productDesc = itemObj?.product_description as JsonObj | undefined
+    const rawTitle = productDesc?.title
+    if (typeof rawTitle !== "string" || !rawTitle) return null
+    const priceObj = item.price as JsonObj | undefined
+    const price = priceObj?.current_retail
+    if (typeof price !== "number" || !Number.isFinite(price)) return null
+    const primaryBrand = itemObj?.primary_brand as JsonObj | undefined
+    const brand =
+      typeof primaryBrand?.name === "string"
+        ? decodeHtmlEntities(primaryBrand.name)
+        : null
+    return { name: toProductName(rawTitle, brand), price }
+  } catch {
+    return null
+  }
 }
 
 // The search page mints the guest session in its Set-Cookie, including the
@@ -102,22 +117,24 @@ async function mintCookies(
   query: string
 ): Promise<{ cookieHeader: string | null; visitorId: string }> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${SEARCH_PAGE}?searchTerm=${encodeURIComponent(query)}`,
       { headers: BROWSER_HEADERS, cache: "no-store" }
     )
     await res.text()
     const cookies = res.headers.getSetCookie()
-    const cookieHeader = cookies
-      .map((c) => c.split(";")[0])
-      .filter(Boolean)
-      .join("; ")
+    const cookieHeader = cookiesToHeader(res)
     const visitorId =
       (cookies.find((c) => c.startsWith("visitorId=")) ?? "")
         .split(";")[0]
         .split("=")[1] ?? ""
-    return { cookieHeader: cookieHeader || null, visitorId }
-  } catch {
+    return { cookieHeader, visitorId }
+  } catch (e) {
+    logAdapterFailure(
+      "Target",
+      query,
+      e instanceof Error ? `${e.name}: ${e.message}` : "fetch error"
+    )
     return { cookieHeader: null, visitorId: "" }
   }
 }
@@ -151,7 +168,7 @@ async function searchProducts(query: string): Promise<ProductResult[]> {
       Referer: pageUrl,
       Cookie: cookieHeader,
     }
-    let res = await fetch(searchUrl(query, visitorId), {
+    let res = await fetchWithTimeout(searchUrl(query, visitorId), {
       headers,
       cache: "no-store",
     })
@@ -162,12 +179,15 @@ async function searchProducts(query: string): Promise<ProductResult[]> {
       if (!reminted.cookieHeader) return []
       cookieHeader = reminted.cookieHeader
       visitorId = reminted.visitorId
-      res = await fetch(searchUrl(query, visitorId), {
+      res = await fetchWithTimeout(searchUrl(query, visitorId), {
         headers: { ...headers, Cookie: cookieHeader },
         cache: "no-store",
       })
     }
-    if (!res.ok) return []
+    if (!res.ok) {
+      logAdapterFailure("Target", query, `HTTP ${res.status}`)
+      return []
+    }
     const data = (await res.json()) as JsonObj
     const search = (data.data as JsonObj | undefined)?.search as
       | JsonObj
@@ -175,15 +195,11 @@ async function searchProducts(query: string): Promise<ProductResult[]> {
     const list = search?.products
     if (!Array.isArray(list)) return []
     const results: ProductResult[] = []
-    const seenNames = new Set<string>()
     for (const item of list as JsonObj[]) {
       const r = toProductResult(item)
-      if (r && !seenNames.has(r.name)) {
-        seenNames.add(r.name)
-        results.push(r)
-      }
+      if (r) results.push(r)
     }
-    return results
+    return dedupeProducts(results)
   } catch {
     return []
   }

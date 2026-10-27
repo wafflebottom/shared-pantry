@@ -104,6 +104,10 @@ export const UNIT_FORMS: Record<string, [string, string]> = {
   tube: ["tube", "tubes"],
 }
 
+// Every distinct singular/plural unit form, for the unit datalists in the
+// add/edit dialogs (was duplicated in ItemRow and RequestNewListLine).
+export const UNIT_FORM_OPTIONS = [...new Set(Object.values(UNIT_FORMS).flat())]
+
 // Pluralize a unit that isn't in UNIT_FORMS (fallback rules).
 function pluralize(word: string): string {
   if (/(s|x|z|ch|sh)$/.test(word)) return word + "es"

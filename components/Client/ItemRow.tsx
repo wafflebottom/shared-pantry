@@ -1,20 +1,17 @@
 "use client"
 
-import { useEffect, useOptimistic, useRef, useState, useTransition } from "react"
+import { useOptimistic, useRef, useState, useTransition } from "react"
 import { Check, CircleCheck, Trash2, X } from "lucide-react"
-import { deleteListItem, toggleListItem, updateListItem } from "@/app/actions"
-import { formatPrice } from "@/lib/prices"
-import { UNIT_FORMS, predictUnit } from "@/lib/units"
+import { deleteListItem, toggleListItem, updateListItem } from "@/app/actions/items"
+import { formatPrice } from "@/lib/price-book"
+import { UNIT_FORM_OPTIONS, predictUnit } from "@/lib/units"
+import { fieldClass, qtyClass } from "@/lib/utils"
 import { useDeleteMode } from "@/components/Client/DeleteModeProvider"
 import { usePendingDelete } from "@/components/Client/PendingDeleteProvider"
 import ProductSearch from "@/components/Client/ProductSearch"
-import ProfileAvatar from "@/components/ui/ProfileAvatar"
+import ProfileAvatar from "@/components/Server/ProfileAvatar"
+import { applyProductPick } from "@/components/Client/applyProductPick"
 import type { PickerProduct } from "@/lib/price-fetch"
-
-const fieldClass =
-  "flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
-
-const unitForms = [...new Set(Object.values(UNIT_FORMS).flat())]
 
 type Attribution = { name: string; color: string } | null
 
@@ -57,6 +54,7 @@ export default function ItemRow({
     completed,
     (_current: boolean, next: boolean) => next
   )
+  const [toggleError, setToggleError] = useState<string | null>(null)
 
   const [offset, setOffset] = useState(0)
   const touchStartX = useRef<number | null>(null)
@@ -66,42 +64,43 @@ export default function ItemRow({
 
   const selected = selectedIds.includes(id)
 
-  useEffect(() => {
+  // Unit prediction runs on input, not in an effect: when the title or qty
+  // changes, predict the unit unless the user typed their own (a manual
+  // unit is never clobbered). The predicted unit is staged in
+  // dataset.newUnit and only saved when the check is tapped.
+  const updatePrediction = () => {
     const titleInput = titleInputRef.current
     const qtyInput = qtyInputRef.current
     const unitInput = unitInputRef.current
     if (!titleInput || !qtyInput || !unitInput) return
-
-    const updatePrediction = () => {
-      const predicted = predictUnit(titleInput.value, Number(qtyInput.value) || 1)
-      const current = unitInput.value
-      if (predicted && (current === "" || current === lastAutoUnit.current)) {
-        unitInput.dataset.newUnit = predicted
-        lastAutoUnit.current = predicted
-      } else {
-        unitInput.dataset.newUnit = current
-      }
+    const predicted = predictUnit(titleInput.value, Number(qtyInput.value) || 1)
+    const current = unitInput.value
+    if (predicted && (current === "" || current === lastAutoUnit.current)) {
+      unitInput.dataset.newUnit = predicted
+      lastAutoUnit.current = predicted
+    } else {
+      unitInput.dataset.newUnit = current
     }
-    const onUnitInput = () => {
-      unitInput.dataset.newUnit = unitInput.value
-    }
-    titleInput.addEventListener("input", updatePrediction)
-    qtyInput.addEventListener("input", updatePrediction)
-    unitInput.addEventListener("input", onUnitInput)
-    return () => {
-      titleInput.removeEventListener("input", updatePrediction)
-      qtyInput.removeEventListener("input", updatePrediction)
-      unitInput.removeEventListener("input", onUnitInput)
-    }
-  }, [])
+  }
+  const onUnitInput = () => {
+    const unitInput = unitInputRef.current
+    if (unitInput) unitInput.dataset.newUnit = unitInput.value
+  }
 
   const toggleCompleted = () => {
     startTransition(async () => {
       addOptimistic(!optimisticCompleted)
+      setToggleError(null)
       const formData = new FormData()
       formData.set("id", String(id))
       formData.set("listTileID", String(listTileID))
-      await toggleListItem(formData)
+      formData.set("completed", String(optimisticCompleted))
+      try {
+        await toggleListItem(formData)
+      } catch {
+        addOptimistic(completed)
+        setToggleError("Couldn't update this item — try again.")
+      }
     })
   }
 
@@ -121,22 +120,26 @@ export default function ItemRow({
   }
 
   const handlePick = (product: PickerProduct) => {
-    // A pick adopts the product's identity — title, brand, size, and price
-    // when the store serves one. A priceless pick leaves the price field
-    // untouched. The fields stay editable, and nothing saves until the
-    // check is tapped.
-    if (titleInputRef.current) titleInputRef.current.value = product.title
-    if (brandInputRef.current) brandInputRef.current.value = product.brand ?? ""
-    if (priceInputRef.current && product.price != null) {
-      priceInputRef.current.value = product.price.toFixed(2)
-    }
-    if (product.itemQty != null && product.itemUnit) {
-      if (qtyInputRef.current) qtyInputRef.current.value = String(product.itemQty)
-      if (unitInputRef.current) {
-        unitInputRef.current.value = product.itemUnit
-        unitInputRef.current.dataset.newUnit = product.itemUnit
-      }
-    }
+    applyProductPick(product, {
+      setTitle: (value) => {
+        if (titleInputRef.current) titleInputRef.current.value = value
+      },
+      setBrand: (value) => {
+        if (brandInputRef.current) brandInputRef.current.value = value
+      },
+      setPrice: (value) => {
+        if (priceInputRef.current) priceInputRef.current.value = value
+      },
+      setQty: (value) => {
+        if (qtyInputRef.current) qtyInputRef.current.value = value
+      },
+      setUnit: (value) => {
+        if (unitInputRef.current) {
+          unitInputRef.current.value = value
+          unitInputRef.current.dataset.newUnit = value
+        }
+      },
+    })
   }
 
   const handleEditSave = async (formData: FormData) => {
@@ -236,8 +239,8 @@ export default function ItemRow({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        className={`relative flex cursor-pointer items-center gap-3 px-4 py-3 ring-1 ring-rose-200 touch-pan-y ${
-          selected ? "bg-red-100" : "bg-white"
+        className={`relative flex cursor-pointer items-center gap-3 px-4 py-3 ring-1 ring-ck-border touch-pan-y ${
+          selected ? "bg-ck-chip" : "bg-ck-surface"
         }`}
         style={{ transform: `translateX(${offset}px)` }}
       >
@@ -246,16 +249,16 @@ export default function ItemRow({
           checked={optimisticCompleted}
           onClick={(e) => e.stopPropagation()}
           onChange={toggleCompleted}
-          className="h-5 w-5 shrink-0"
+          className="h-5 w-5 shrink-0 accent-ck-check"
         />
         <div className="min-w-0 flex-1">
-          <p className={optimisticCompleted ? "line-through opacity-60" : undefined}>
+          <p className={optimisticCompleted ? "line-through opacity-50" : undefined}>
             {title}
-            {brand && <span className="text-neutral-500"> · {brand}</span>}
+            {brand && <span className="text-ck-muted"> · {brand}</span>}
           </p>
-          <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-neutral-500">
+          <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm text-ck-muted">
             <span>{qtyLabel}</span>
-            {price != null && <span>· {formatPrice(price)} each</span>}
+            {price != null && <span className="font-mono">· {formatPrice(price)} each</span>}
             {showRequester && requestedBy && (
               <span className="inline-flex items-center gap-1">
                 · <ProfileAvatar profile={requestedBy} /> {requestedBy.name}
@@ -267,9 +270,10 @@ export default function ItemRow({
               </span>
             )}
           </p>
+          {toggleError && <p className="text-xs text-destructive">{toggleError}</p>}
         </div>
         {price != null && (
-          <span className="shrink-0 font-medium">{formatPrice(price * qty)}</span>
+          <span className="shrink-0 font-mono font-bold">{formatPrice(price * qty)}</span>
         )}
       </div>
 
@@ -282,14 +286,14 @@ export default function ItemRow({
               type="button"
               aria-label="Close"
               onClick={() => dialogRef.current?.close()}
-              className="text-neutral-500"
+              className="text-ck-muted"
             >
               <X />
             </button>
           </div>
 
           <div className="mt-2 flex items-center gap-2">
-            <label htmlFor={`edit-item-${id}`} className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor={`edit-item-${id}`} className="w-12 shrink-0 text-ck-muted">
               Item
             </label>
             <input
@@ -297,12 +301,13 @@ export default function ItemRow({
               ref={titleInputRef}
               name="title"
               defaultValue={title}
+              onInput={updatePrediction}
               className={fieldClass}
               autoComplete="off"
             />
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <label htmlFor={`edit-brand-${id}`} className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor={`edit-brand-${id}`} className="w-12 shrink-0 text-ck-muted">
               Brand
             </label>
             <input
@@ -315,7 +320,7 @@ export default function ItemRow({
             />
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <label htmlFor={`edit-qty-${id}`} className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor={`edit-qty-${id}`} className="w-12 shrink-0 text-ck-muted">
               Qty
             </label>
             <input
@@ -326,9 +331,10 @@ export default function ItemRow({
               min="0"
               step="any"
               defaultValue={qty}
-              className="w-20 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
+              onInput={updatePrediction}
+              className={qtyClass}
             />
-            <label htmlFor={`edit-unit-${id}`} className="shrink-0 text-neutral-500">
+            <label htmlFor={`edit-unit-${id}`} className="shrink-0 text-ck-muted">
               Unit
             </label>
             <input
@@ -337,17 +343,18 @@ export default function ItemRow({
               name="unit"
               defaultValue={unit ?? ""}
               list={`unit-forms-edit-${id}`}
+              onInput={onUnitInput}
               className={fieldClass}
               autoComplete="off"
             />
             <datalist id={`unit-forms-edit-${id}`}>
-              {unitForms.map((form) => (
+              {UNIT_FORM_OPTIONS.map((form) => (
                 <option key={form} value={form} />
               ))}
             </datalist>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <label htmlFor={`edit-price-${id}`} className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor={`edit-price-${id}`} className="w-12 shrink-0 text-ck-muted">
               Price
             </label>
             <input
@@ -369,14 +376,14 @@ export default function ItemRow({
               type="button"
               aria-label="Delete item"
               onClick={handleDialogDelete}
-              className="flex items-center justify-center rounded-full bg-red-100 p-2 text-red-700"
+              className="flex items-center justify-center rounded-full bg-destructive/10 p-2 text-destructive"
             >
               <Trash2 />
             </button>
             <button
               type="submit"
               aria-label="Save changes"
-              className="flex items-center justify-center rounded-full bg-rose-100 p-2 text-rose-900"
+              className="flex items-center justify-center rounded-full bg-ck-primary p-2 text-white"
             >
               <Check />
             </button>

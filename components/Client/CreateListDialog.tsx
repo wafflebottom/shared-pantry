@@ -3,7 +3,7 @@
 import { useTransition, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import { Check, X } from "lucide-react"
-import { createListTile } from "@/app/actions"
+import { createListTile } from "@/app/actions/lists"
 import StoreSelect from "@/components/Client/StoreSelect"
 
 // The shared create-list dialog: the Footer's "+" button and the nav
@@ -40,7 +40,7 @@ export default function CreateListDialog({
         <StoreSelect />
 
         <div className="mt-10 flex justify-end">
-          <button type="submit" aria-label="Create list" className="cursor-pointer">
+          <button type="submit" aria-label="Create list" className="flex cursor-pointer items-center justify-center rounded-full bg-ck-primary p-2 text-white">
             <Check />
           </button>
         </div>

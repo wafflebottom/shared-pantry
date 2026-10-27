@@ -13,7 +13,7 @@ export default function RequestNewListTile() {
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         aria-label="New list"
-        className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-[#a50036] hover:bg-rose-400"
+        className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-ck-ink hover:bg-ck-chip"
       >
         <Plus />
       </button>

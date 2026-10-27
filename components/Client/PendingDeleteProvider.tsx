@@ -23,8 +23,9 @@ export function usePendingDelete() {
   return ctx
 }
 
-export default function PendingDeleteProvider({ children }: { children: ReactNode }) {
+export function PendingDeleteProvider({ children }: { children: ReactNode }) {
   const [batches, setBatches] = useState<PendingBatch[]>([])
+  const [failedKeys, setFailedKeys] = useState<Set<number>>(new Set())
   const batchesRef = useRef<PendingBatch[]>([])
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const nextKey = useRef(1)
@@ -39,28 +40,42 @@ export default function PendingDeleteProvider({ children }: { children: ReactNod
     if (t) clearTimeout(t)
     timers.current.delete(key)
     syncBatches(batchesRef.current.filter((b) => b.key !== key))
+    setFailedKeys((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
   }
 
-  const commitBatch = useCallback((key: number) => {
+  // A commit is awaited: on failure the toast stays visible with a Retry
+  // button until the delete is confirmed, and the failure is logged — the
+  // row must not stay hidden while the delete never landed.
+  const commitBatch = useCallback(async (key: number) => {
     const batch = batchesRef.current.find((b) => b.key === key)
     if (!batch) return
-    dropBatch(key)
-    void batch.commit()
+    try {
+      await batch.commit()
+      dropBatch(key)
+    } catch (e) {
+      console.error(`[pending-delete] commit failed for "${batch.label}":`, e)
+      setFailedKeys((prev) => new Set(prev).add(key))
+    }
   }, [])
 
   const stageDeletion = useCallback((input: Omit<PendingBatch, "key">) => {
     const key = nextKey.current++
     syncBatches([...batchesRef.current, { ...input, key }])
-    timers.current.set(key, setTimeout(() => commitBatch(key), 6000))
+    timers.current.set(key, setTimeout(() => void commitBatch(key), 6000))
   }, [commitBatch])
-
-  const handleUndo = useCallback((key: number) => {
-    dropBatch(key)
-  }, [])
 
   useEffect(() => () => {
     for (const t of timers.current.values()) clearTimeout(t)
-    for (const b of batchesRef.current) void b.commit()
+    for (const b of batchesRef.current) {
+      void b.commit().catch((e: unknown) =>
+        console.error(`[pending-delete] commit failed for "${b.label}":`, e)
+      )
+    }
   }, [])
 
   const stagedIds = useMemo(
@@ -77,9 +92,15 @@ export default function PendingDeleteProvider({ children }: { children: ReactNod
           {batches.map((b) => (
             <div key={b.key} className="flex items-center gap-4 rounded-full bg-neutral-800 px-4 py-2 text-sm text-white shadow-lg">
               <span>{b.label}</span>
-              <button type="button" onClick={() => handleUndo(b.key)} className="cursor-pointer font-semibold text-rose-300 hover:underline">
-                Undo
-              </button>
+              {failedKeys.has(b.key) ? (
+                <button type="button" onClick={() => void commitBatch(b.key)} className="cursor-pointer font-semibold text-ck-chip hover:underline">
+                  Retry
+                </button>
+              ) : (
+                <button type="button" onClick={() => dropBatch(b.key)} className="cursor-pointer font-semibold text-ck-chip hover:underline">
+                  Undo
+                </button>
+              )}
             </div>
           ))}
         </div>

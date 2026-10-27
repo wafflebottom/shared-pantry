@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client"
-import { itemKeyFor } from "../lib/prices"
-import { PROFILE_COLORS } from "../lib/profile-colors"
+import { itemKeyFor } from "@/lib/price-book"
+import { PROFILE_COLORS } from "@/lib/profile-colors"
 
 const prisma = new PrismaClient()
 

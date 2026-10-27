@@ -1,4 +1,5 @@
 import type { ProductResult, StoreAdapter } from "@/lib/product"
+import { fetchJson, mapBatches, type JsonObj } from "@/lib/stores/http"
 
 // Whole Foods Market storefront. Simon's Denver store is Washington Park
 // (wfmStoreId 10373) — recorded here, though the calls below don't need
@@ -23,16 +24,8 @@ const BROWSER_HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
 }
 
-type JsonObj = Record<string, unknown>
-
-async function getJson(url: string): Promise<unknown> {
-  try {
-    const res = await fetch(url, { headers: BROWSER_HEADERS, cache: "no-store" })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+async function getJson(url: string, query: string): Promise<unknown> {
+  return fetchJson(url, BROWSER_HEADERS, "Whole Foods", query)
 }
 
 // The search API requires `old` (the previous query text); for a fresh
@@ -45,7 +38,7 @@ async function searchAsinsOnce(query: string): Promise<string[]> {
     offset: "0",
     programType: "grocery",
   })
-  const data = await getJson(`${SEARCH_URL}?${params}`)
+  const data = await getJson(`${SEARCH_URL}?${params}`, query)
   const results = (data as JsonObj | null)?.mainResultSet as JsonObj | undefined
   const list = results?.searchResults
   if (!Array.isArray(list)) return []
@@ -87,17 +80,17 @@ async function searchProducts(query: string): Promise<ProductResult[]> {
   try {
     const asins = await searchAsins(query)
     if (asins.length === 0) return []
-    const byAsin = new Map<string, JsonObj>()
-    for (let i = 0; i < asins.length; i += PRODUCTS_BATCH_SIZE) {
-      const batch = asins.slice(i, i + PRODUCTS_BATCH_SIZE)
+    const batches = await mapBatches(asins, PRODUCTS_BATCH_SIZE, async (batch) => {
       const params = new URLSearchParams({ asins: batch.join(",") })
-      const data = await getJson(`${PRODUCTS_URL}?${params}`)
-      if (!Array.isArray(data)) continue
-      for (const item of data as JsonObj[]) {
-        const asin = item.asin
-        if (typeof asin === "string" && asin && !byAsin.has(asin)) {
-          byAsin.set(asin, item)
-        }
+      const data = await getJson(`${PRODUCTS_URL}?${params}`, query)
+      if (!Array.isArray(data)) return []
+      return data as JsonObj[]
+    })
+    const byAsin = new Map<string, JsonObj>()
+    for (const item of batches) {
+      const asin = item.asin
+      if (typeof asin === "string" && asin && !byAsin.has(asin)) {
+        byAsin.set(asin, item)
       }
     }
     // Emit in search-rank (ASIN) order, deduped by name.

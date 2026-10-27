@@ -30,6 +30,10 @@ export const KNOWN_BRANDS: string[] = [
   "Favorite Day",
   "Nate's Honey",
   "Savannah Bee Company",
+  "Great Value",
+  "Marketside",
+  "Happy Egg Co.",
+  "ReadyWise",
 ]
 
 const BRANDS_LONGEST_FIRST = [...KNOWN_BRANDS].sort((a, b) => b.length - a.length)

@@ -1,3 +1,4 @@
+import { cache } from "react"
 import { cookies } from "next/headers"
 import { prisma } from "@/lib/prisma"
 import { PROFILE_COLORS } from "@/lib/profile-colors"
@@ -15,8 +16,9 @@ const SEED_PROFILES: { name: string; color: string }[] = [
 
 // Every profile in the table. Seeds Simon + Rachel the first time the
 // table is empty; upserts by name so concurrent first loads can't
-// duplicate them.
-export async function getProfiles(): Promise<ProfileDTO[]> {
+// duplicate them. Cached per request, so the Header and the profile
+// actions share one query instead of each re-reading the table.
+export const getProfiles = cache(async (): Promise<ProfileDTO[]> => {
   const count = await prisma.profile.count()
   if (count === 0) {
     for (const p of SEED_PROFILES) {
@@ -31,7 +33,7 @@ export async function getProfiles(): Promise<ProfileDTO[]> {
     orderBy: { id: "asc" },
     select: { id: true, name: true, color: true },
   })
-}
+})
 
 // The profile this device is acting as, from the cookie set when the
 // device's owner picked their profile. Null until a profile is chosen.
@@ -41,4 +43,17 @@ export async function getCurrentProfile(): Promise<ProfileDTO | null> {
   if (!id) return null
   const profiles = await getProfiles()
   return profiles.find((p) => p.id === id) ?? null
+}
+
+// Claims this device for a profile: the cookie is how the server knows
+// who is acting from then on. httpOnly + sameSite so client script never
+// needs (or can) read it — no client code reads document.cookie for it.
+export async function claimProfileCookie(id: number): Promise<void> {
+  const jar = await cookies()
+  jar.set(PROFILE_COOKIE, String(id), {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+    httpOnly: true,
+    sameSite: "lax",
+  })
 }

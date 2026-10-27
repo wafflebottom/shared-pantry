@@ -1,11 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { ProductResult, StoreAdapter } from "@/lib/product"
+import { fetchText } from "@/lib/stores/http"
 
-// Natural Grocers storefront (DoorDash-powered). Store 48664081 is Simon's
-// preferred store (Denver – Colorado Blvd & Evans, from his own browser
-// session URL). To use a different store, search on the site in a browser
-// and copy the numeric id from /convenience/store/<id>/search/...
+// Natural Grocers storefront (DoorDash-powered). Store 48664081 is the
+// Design District store, 368 S Broadway, Denver, CO 80209. To use a
+// different store, search on the site in a browser and copy the numeric id
+// from /convenience/store/<id>/search/...
 const NG_STORE_ID = "48664081"
 const NG_SEARCH_BASE = `https://shop.naturalgrocers.com/convenience/store/${NG_STORE_ID}/search`
 const NG_CATEGORY_BASE = "https://shop.naturalgrocers.com/category"
@@ -31,19 +32,13 @@ function parseItemPrices(html: string): ProductResult[] {
   return entries
 }
 
-async function fetchPage(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { headers: BROWSER_HEADERS, cache: "no-store" })
-    if (!res.ok) return null
-    return await res.text()
-  } catch {
-    return null
-  }
+async function fetchPage(url: string, label: string): Promise<string | null> {
+  return fetchText(url, BROWSER_HEADERS, "Natural Grocers", label)
 }
 
 async function searchProducts(query: string): Promise<ProductResult[]> {
   const url = `${NG_SEARCH_BASE}/${encodeURIComponent(query)}?attr_src=home&disable_spell_check=false`
-  const html = await fetchPage(url)
+  const html = await fetchPage(url, query)
   return html ? parseItemPrices(html) : []
 }
 
@@ -72,15 +67,23 @@ const NG_CATEGORY_SLUGS = [
 ]
 const CACHE_PATH = path.join(process.cwd(), "data", "natural-grocers-catalog.json")
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000
 
 let catalogInFlight: Promise<ProductResult[]> | null = null
+let negativeCacheUntilMs = 0
+
+type CatalogCache = {
+  fetchedAt: string
+  entries: ProductResult[]
+  negativeUntil?: string
+}
 
 async function buildCatalog(): Promise<ProductResult[]> {
   const byName = new Map<string, ProductResult>()
   for (let i = 0; i < NG_CATEGORY_SLUGS.length; i += 4) {
     const batch = NG_CATEGORY_SLUGS.slice(i, i + 4)
     const pages = await Promise.all(
-      batch.map((slug) => fetchPage(`${NG_CATEGORY_BASE}/${slug}`))
+      batch.map((slug) => fetchPage(`${NG_CATEGORY_BASE}/${slug}`, slug))
     )
     for (const html of pages) {
       if (!html) continue
@@ -93,9 +96,17 @@ async function buildCatalog(): Promise<ProductResult[]> {
 }
 
 async function getCatalog(): Promise<ProductResult[]> {
+  if (Date.now() < negativeCacheUntilMs) return []
   try {
     const raw = await readFile(CACHE_PATH, "utf8")
-    const cached = JSON.parse(raw) as { fetchedAt: string; entries: ProductResult[] }
+    const cached = JSON.parse(raw) as CatalogCache
+    if (
+      cached.negativeUntil &&
+      Date.now() < new Date(cached.negativeUntil).getTime()
+    ) {
+      negativeCacheUntilMs = new Date(cached.negativeUntil).getTime()
+      return []
+    }
     if (Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
       return cached.entries
     }
@@ -105,16 +116,25 @@ async function getCatalog(): Promise<ProductResult[]> {
   if (!catalogInFlight) {
     catalogInFlight = buildCatalog()
       .then(async (entries) => {
-        if (entries.length > 0) {
-          try {
-            await mkdir(path.dirname(CACHE_PATH), { recursive: true })
-            await writeFile(
-              CACHE_PATH,
-              JSON.stringify({ fetchedAt: new Date().toISOString(), entries })
-            )
-          } catch {
-            // Caching is an optimization; a failed write changes nothing.
-          }
+        // On total failure nothing used to be cached, so every missed
+        // lookup rebuilt all 18 category pages. A failed build now
+        // writes a ~10 min negative-cache entry instead.
+        const cacheEntry: CatalogCache =
+          entries.length > 0
+            ? { fetchedAt: new Date().toISOString(), entries }
+            : {
+                fetchedAt: new Date().toISOString(),
+                entries: [],
+                negativeUntil: new Date(Date.now() + NEGATIVE_CACHE_TTL_MS).toISOString(),
+              }
+        if (entries.length === 0) {
+          negativeCacheUntilMs = Date.now() + NEGATIVE_CACHE_TTL_MS
+        }
+        try {
+          await mkdir(path.dirname(CACHE_PATH), { recursive: true })
+          await writeFile(CACHE_PATH, JSON.stringify(cacheEntry))
+        } catch {
+          // Caching is an optimization; a failed write changes nothing.
         }
         return entries
       })

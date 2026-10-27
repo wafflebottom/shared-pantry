@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useTransition, type RefObject } from "react"
 import { Search } from "lucide-react"
-import { getPriceSearchInfo, searchStoreProductsAction } from "@/app/actions"
+import { getPriceSearchInfo, searchStoreProductsAction } from "@/app/actions/prices"
 import type { PickerProduct } from "@/lib/price-fetch"
-import { formatPrice } from "@/lib/prices"
+import { formatPrice } from "@/lib/price-book"
 
 type Props = {
   listTileID: number
@@ -15,19 +15,14 @@ type Props = {
 
 type SearchInfo = { supported: boolean; store: string | null }
 
-// One support check per list per page session, shared by every dialog.
-const infoCache = new Map<number, Promise<SearchInfo>>()
-
-function loadInfo(listTileID: number): Promise<SearchInfo> {
-  let pending = infoCache.get(listTileID)
-  if (!pending) {
-    pending = getPriceSearchInfo(listTileID).catch(() => {
-      infoCache.delete(listTileID)
-      return { supported: false, store: null }
-    })
-    infoCache.set(listTileID, pending)
+// One support check per dialog open, not cached across opens: a list
+// renamed to another store must not keep the old store's flag/label.
+async function loadInfo(listTileID: number): Promise<SearchInfo> {
+  try {
+    return await getPriceSearchInfo(listTileID)
+  } catch {
+    return { supported: false, store: null }
   }
-  return pending
 }
 
 // Store product search for the item dialogs. Renders its shell immediately
@@ -74,8 +69,8 @@ export default function ProductSearch({ listTileID, onPick, inputRef }: Props) {
   }
 
   return (
-    <div className="mt-4 border-t border-neutral-200 pt-3">
-      <p className="mb-2 text-xs font-medium text-neutral-500">
+    <div className="mt-4 border-t border-ck-border pt-3">
+      <p className="mb-2 text-xs font-medium text-ck-muted">
         Find at {storeLabel}
       </p>
       <div className="flex items-center gap-2">
@@ -90,37 +85,37 @@ export default function ProductSearch({ listTileID, onPick, inputRef }: Props) {
             }
           }}
           placeholder="Search products…"
-          className="flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
+          className="flex-1 rounded-md bg-ck-bg px-2 py-1 text-ck-ink outline-none focus:bg-ck-surface focus:ring-1 focus:ring-ck-primary"
         />
         <button
           type="button"
           onClick={runSearch}
           disabled={!info || pending}
-          className="flex shrink-0 items-center gap-1 rounded-full bg-rose-100 px-3 py-1 text-sm text-rose-900 disabled:opacity-50"
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-ck-primary px-3 py-1 text-sm text-white disabled:opacity-50"
         >
           <Search size={14} />
           {pending ? "…" : "Search"}
         </button>
       </div>
       {searched && results.length === 0 && !pending && (
-        <p className="mt-2 text-sm text-neutral-400">No matches at {storeLabel}.</p>
+        <p className="mt-2 text-sm text-ck-muted">No matches at {storeLabel}.</p>
       )}
       {results.length > 0 && (
-        <ul className="mt-2 max-h-48 divide-y divide-neutral-100 overflow-y-auto rounded-md ring-1 ring-neutral-200">
+        <ul className="mt-2 max-h-48 divide-y divide-ck-border overflow-y-auto rounded-md ring-1 ring-ck-border">
           {results.map((p) => (
             <li key={p.name}>
               <button
                 type="button"
                 onClick={() => handlePick(p)}
-                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-rose-50"
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-ck-chip"
               >
                 <span className="text-sm">{p.name}</span>
                 {p.price != null ? (
-                  <span className="shrink-0 text-sm font-medium">
+                  <span className="shrink-0 font-mono text-sm font-medium">
                     {formatPrice(p.price)}
                   </span>
                 ) : (
-                  <span className="shrink-0 text-sm text-neutral-400">no price</span>
+                  <span className="shrink-0 text-sm text-ck-muted">no price</span>
                 )}
               </button>
             </li>

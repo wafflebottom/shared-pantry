@@ -1,40 +1,23 @@
 import type { Metadata } from "next"
+import { cache } from "react"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { Header } from "@/components/ui/Header"
-import Footer from "@/components/ui/Footer"
-import ItemRow from "@/components/Client/ItemRow"
+import Header from "@/components/Server/Header"
+import Footer from "@/components/Server/Footer"
+import ItemRows from "@/components/Server/ItemRows"
 import { DeleteModeProvider } from "@/components/Client/DeleteModeProvider"
-import PendingDeleteProvider from "@/components/Client/PendingDeleteProvider"
+import { PendingDeleteProvider } from "@/components/Client/PendingDeleteProvider"
 import ClearCompletedButton from "@/components/Client/ClearCompletedButton"
 import ResetCompletedButton from "@/components/Client/ResetCompletedButton"
 import LookupPricesButton from "@/components/Client/LookupPricesButton"
-import { itemKeyFor } from "@/lib/prices"
+import { buildPriceLookup, summarizePrices } from "@/lib/price-book"
 import { SUPPORTED_PRICE_STORES } from "@/lib/price-fetch"
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}): Promise<Metadata> {
-  const { id } = await params
-  const tile = await prisma.listTile.findUnique({
-    where: { id: Number(id) },
-    select: { store: true },
-  })
-  return { title: tile ? `${tile.store} · Shared Pantry` : "Shared Pantry" }
-}
-
-export default async function ListItem({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
-  const { id } = await params
-  const bIsListPage = true
-
-  const tile = await prisma.listTile.findUnique({
-    where: { id: Number(id) },
+// One cached tile fetch shared by generateMetadata and the page, so the
+// list page doesn't read the same tile twice.
+const getTile = cache(async (id: number) =>
+  prisma.listTile.findUnique({
+    where: { id },
     include: {
       items: {
         orderBy: [{ completed: "asc" }, { createdAt: "asc" }],
@@ -45,39 +28,54 @@ export default async function ListItem({
       },
     },
   })
+)
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const tile = await getTile(Number(id))
+  return { title: tile ? `${tile.store} · Shared Pantry` : "Shared Pantry" }
+}
+
+export default async function ListItem({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id } = await params
+  const isListPage = true
+
+  const tile = await getTile(Number(id))
 
   if (!tile) redirect("/")
 
-  const lists = await prisma.listTile.findMany({
-    select: { id: true, store: true },
-    orderBy: { createdAt: "asc" },
-  })
-
-  const priceRows = await prisma.storePrice.findMany({
-    where: { store: tile.store },
-  })
-  const priceByKey = new Map(priceRows.map((row) => [row.itemKey, row.price]))
+  const [lists, priceRows] = await Promise.all([
+    prisma.listTile.findMany({
+      select: { id: true, store: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.storePrice.findMany({
+      where: { store: tile.store },
+      select: { store: true, itemKey: true, price: true },
+    }),
+  ])
+  const priceLookup = buildPriceLookup(priceRows)
   const priceFor = (item: { title: string; brand: string | null }) =>
-    priceByKey.get(itemKeyFor(item.title, item.brand)) ?? null
+    priceLookup(tile.store, item.title, item.brand)
 
   const activeItems = tile.items.filter((item) => !item.completed)
   const completedItems = tile.items.filter((item) => item.completed)
 
-  let estimatedTotal = 0
-  let pricedCount = 0
-  for (const item of tile.items) {
-    const price = priceFor(item)
-    if (price !== null) {
-      estimatedTotal += price * item.qty
-      pricedCount += 1
-    }
-  }
+  const { estimatedTotal, pricedCount } = summarizePrices(tile.items, priceFor)
   const missingCount = tile.items.length - pricedCount
 
   return (
-    <div className="min-h-screen bg-rose-50 font-sans">
+    <div className="min-h-screen bg-ck-bg font-sans lg:pl-56">
       <Header
-        bis_list_page={bIsListPage}
+        isListPage={isListPage}
         listTileID={tile.id}
         listStore={tile.store}
         lists={lists}
@@ -85,7 +83,7 @@ export default async function ListItem({
         pricedCount={pricedCount}
         itemCount={tile.items.length}
       />
-      <DeleteModeProvider listTileID={tile.id}>
+      <DeleteModeProvider>
         <PendingDeleteProvider>
           <main className="mx-auto max-w-3xl px-4 pb-32 pt-24 portrait:pt-36 sm:pt-28 sm:portrait:pt-44">
             {SUPPORTED_PRICE_STORES.includes(tile.store) && missingCount > 0 && (
@@ -96,56 +94,36 @@ export default async function ListItem({
               />
             )}
 
-            <div className="flex flex-col">
-              {activeItems.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  id={item.id}
-                  title={item.title}
-                  brand={item.brand}
-                  qty={item.qty}
-                  unit={item.unit}
-                  completed={item.completed}
-                  listTileID={tile.id}
-                  price={priceFor(item)}
-                  requestedBy={item.requestedBy}
-                  checkedOffBy={item.checkedOffBy}
-                />
-              ))}
-            </div>
+            <ItemRows
+              items={activeItems.map((item) => ({
+                ...item,
+                listTileID: tile.id,
+                price: priceFor(item),
+              }))}
+            />
 
             {completedItems.length > 0 && (
               <>
                 <div className="my-4 flex items-center gap-3">
                   <ResetCompletedButton listTileID={tile.id} />
-                  <span className="text-sm font-semibold text-neutral-500">Completed</span>
-                  <div className="h-px flex-1 bg-rose-200" />
+                  <span className="text-sm font-semibold text-ck-muted">Completed</span>
+                  <div className="h-px flex-1 bg-ck-border" />
                   <ClearCompletedButton
                     listTileID={tile.id}
                     completedIds={completedItems.map((item) => item.id)}
                   />
                 </div>
-                <div className="flex flex-col">
-                  {completedItems.map((item) => (
-                    <ItemRow
-                      key={item.id}
-                      id={item.id}
-                      title={item.title}
-                      brand={item.brand}
-                      qty={item.qty}
-                      unit={item.unit}
-                      completed={item.completed}
-                      listTileID={tile.id}
-                      price={priceFor(item)}
-                      requestedBy={item.requestedBy}
-                      checkedOffBy={item.checkedOffBy}
-                    />
-                  ))}
-                </div>
+                <ItemRows
+                  items={completedItems.map((item) => ({
+                    ...item,
+                    listTileID: tile.id,
+                    price: priceFor(item),
+                  }))}
+                />
               </>
             )}
           </main>
-          <Footer bis_list_page={bIsListPage} />
+          <Footer bis_list_page={isListPage} listTileID={tile.id} />
         </PendingDeleteProvider>
       </DeleteModeProvider>
     </div>

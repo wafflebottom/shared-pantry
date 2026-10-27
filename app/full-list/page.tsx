@@ -1,53 +1,48 @@
 import type { Metadata } from "next"
 import { prisma } from "@/lib/prisma"
-import { Header } from "@/components/ui/Header"
-import Footer from "@/components/ui/Footer"
-import ItemRow from "@/components/Client/ItemRow"
+import Header from "@/components/Server/Header"
+import Footer from "@/components/Server/Footer"
+import ItemRows from "@/components/Server/ItemRows"
 import { DeleteModeProvider } from "@/components/Client/DeleteModeProvider"
-import PendingDeleteProvider from "@/components/Client/PendingDeleteProvider"
+import { PendingDeleteProvider } from "@/components/Client/PendingDeleteProvider"
 import FullListToggle from "@/components/Client/FullListToggle"
-import { itemKeyFor } from "@/lib/prices"
+import { buildPriceLookup, summarizePrices } from "@/lib/price-book"
 
 export const metadata: Metadata = { title: "Full List · Shared Pantry" }
 
 export default async function FullList() {
-  const tiles = await prisma.listTile.findMany({
-    orderBy: { createdAt: "asc" },
-    include: {
-      items: {
-        orderBy: [{ completed: "asc" }, { createdAt: "asc" }],
-        include: {
-          requestedBy: { select: { name: true, color: true } },
-          checkedOffBy: { select: { name: true, color: true } },
+  const [tiles, priceRows] = await Promise.all([
+    prisma.listTile.findMany({
+      orderBy: { createdAt: "asc" },
+      include: {
+        items: {
+          orderBy: [{ completed: "asc" }, { createdAt: "asc" }],
+          include: {
+            requestedBy: { select: { name: true, color: true } },
+            checkedOffBy: { select: { name: true, color: true } },
+          },
         },
       },
-    },
-  })
+    }),
+    prisma.storePrice.findMany({
+      select: { store: true, itemKey: true, price: true },
+    }),
+  ])
 
   // The price book is keyed by store name, so one map covers every list.
-  const priceRows = await prisma.storePrice.findMany()
-  const priceByKey = new Map(
-    priceRows.map((row) => [`${row.store}|${row.itemKey}`, row.price])
-  )
+  const priceLookup = buildPriceLookup(priceRows)
   const priceFor = (store: string, item: { title: string; brand: string | null }) =>
-    priceByKey.get(`${store}|${itemKeyFor(item.title, item.brand)}`) ?? null
+    priceLookup(store, item.title, item.brand)
 
   const includedTiles = tiles.filter((tile) => tile.includeInFullList)
 
   // The Header total covers the included lists only — what you still need.
-  let estimatedTotal = 0
-  let pricedCount = 0
-  let itemCount = 0
-  for (const tile of includedTiles) {
-    for (const item of tile.items) {
-      itemCount += 1
-      const price = priceFor(tile.store, item)
-      if (price !== null) {
-        estimatedTotal += price * item.qty
-        pricedCount += 1
-      }
-    }
-  }
+  const { estimatedTotal, pricedCount, itemCount } = summarizePrices(
+    includedTiles.flatMap((tile) =>
+      tile.items.map((item) => ({ ...item, store: tile.store }))
+    ),
+    (entry) => priceFor(entry.store, entry)
+  )
 
   // Completed items from every included list, combined into one section at
   // the bottom. Each store keeps a small label so you can see where an item
@@ -61,17 +56,15 @@ export default async function FullList() {
     .filter((group) => group.items.length > 0)
 
   return (
-    <div className="min-h-screen bg-rose-50 font-sans">
+    <div className="min-h-screen bg-ck-bg font-sans lg:pl-56">
       <Header
-        bis_full_list_page
+        isFullListPage
         lists={tiles}
         estimatedTotal={estimatedTotal}
         pricedCount={pricedCount}
         itemCount={itemCount}
       />
-      {/* DeleteModeProvider only exists because ItemRow requires it. The
-          Full List has no bulk-delete UI, so its listTileID is unused. */}
-      <DeleteModeProvider listTileID={0}>
+      <DeleteModeProvider>
         <PendingDeleteProvider>
           <main className="mx-auto max-w-5xl px-4 pb-32 pt-24 portrait:pt-36 sm:pt-28 sm:portrait:pt-44">
             <div className="flex flex-col gap-6 lg:flex-row">
@@ -79,10 +72,10 @@ export default async function FullList() {
                   the header so they're always reachable. On narrow screens
                   there's no margin, so they stack above the list as before. */}
               <aside className="shrink-0 lg:sticky lg:top-28 lg:w-60 lg:self-start">
-                <p className="mb-2 text-sm font-semibold text-neutral-500">
+                <p className="mb-2 text-sm font-semibold text-ck-muted">
                   Lists in this view
                 </p>
-                <div className="flex flex-col divide-y divide-rose-100 rounded-lg bg-white ring-1 ring-rose-200">
+                <div className="flex flex-col divide-y divide-ck-border rounded-lg bg-ck-surface ring-1 ring-ck-border">
                   {tiles.map((tile) => (
                     <FullListToggle
                       key={tile.id}
@@ -96,7 +89,7 @@ export default async function FullList() {
 
               <div className="min-w-0 flex-1">
                 {includedTiles.length === 0 && (
-                  <p className="text-center text-neutral-500">
+                  <p className="text-center text-ck-muted">
                     No lists included — turn one on to see what you need.
                   </p>
                 )}
@@ -107,28 +100,18 @@ export default async function FullList() {
                   return (
                     <section key={tile.id} className="mb-8">
                       <div className="mb-2 flex items-center gap-3">
-                        <span className="text-sm font-semibold text-neutral-500">
+                        <span className="font-serif text-sm font-semibold text-ck-muted">
                           {tile.store}
                         </span>
-                        <div className="h-px flex-1 bg-rose-200" />
+                        <div className="h-px flex-1 bg-ck-border" />
                       </div>
-                      <div className="flex flex-col">
-                        {activeItems.map((item) => (
-                          <ItemRow
-                            key={item.id}
-                            id={item.id}
-                            title={item.title}
-                            brand={item.brand}
-                            qty={item.qty}
-                            unit={item.unit}
-                            completed={item.completed}
-                            listTileID={tile.id}
-                            price={priceFor(tile.store, item)}
-                            requestedBy={item.requestedBy}
-                            checkedOffBy={item.checkedOffBy}
-                          />
-                        ))}
-                      </div>
+                      <ItemRows
+                        items={activeItems.map((item) => ({
+                          ...item,
+                          listTileID: tile.id,
+                          price: priceFor(tile.store, item),
+                        }))}
+                      />
                     </section>
                   )
                 })}
@@ -136,33 +119,23 @@ export default async function FullList() {
                 {completedByTile.length > 0 && (
                   <section>
                     <div className="mb-2 flex items-center gap-3">
-                      <span className="text-sm font-semibold text-neutral-500">
+                      <span className="text-sm font-semibold text-ck-muted">
                         Completed
                       </span>
-                      <div className="h-px flex-1 bg-rose-200" />
+                      <div className="h-px flex-1 bg-ck-border" />
                     </div>
                     {completedByTile.map((group) => (
                       <div key={group.listTileID} className="mb-4">
-                        <p className="mb-1 text-xs font-medium text-neutral-400">
+                        <p className="mb-1 text-xs font-medium text-ck-muted">
                           {group.store}
                         </p>
-                        <div className="flex flex-col">
-                          {group.items.map((item) => (
-                            <ItemRow
-                              key={item.id}
-                              id={item.id}
-                              title={item.title}
-                              brand={item.brand}
-                              qty={item.qty}
-                              unit={item.unit}
-                              completed={item.completed}
-                              listTileID={group.listTileID}
-                              price={priceFor(group.store, item)}
-                              requestedBy={item.requestedBy}
-                              checkedOffBy={item.checkedOffBy}
-                            />
-                          ))}
-                        </div>
+                        <ItemRows
+                          items={group.items.map((item) => ({
+                            ...item,
+                            listTileID: group.listTileID,
+                            price: priceFor(group.store, item),
+                          }))}
+                        />
                       </div>
                     ))}
                   </section>

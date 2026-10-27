@@ -1,19 +1,17 @@
 "use client"
 
 import { useState } from "react"
-import { STORES } from "@/lib/stores"
+import { STORE_OPTIONS } from "@/lib/store-options"
+import { fieldClass } from "@/lib/utils"
 
 const OTHER = "__other"
-
-const fieldClass =
-  "flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
 
 // Exact store picker for list tiles. A canonical store is submitted as-is,
 // so the tile's store matches the price registry key exactly and price
 // lookup/search fire. "Other…" reveals a free-text input for custom lists
 // like Farmers Market, which keep working exactly as before.
 export default function StoreSelect({ defaultValue = "" }: { defaultValue?: string }) {
-  const initialIsOther = defaultValue !== "" && !STORES.includes(defaultValue)
+  const initialIsOther = defaultValue !== "" && !STORE_OPTIONS.includes(defaultValue)
   const [choice, setChoice] = useState(initialIsOther ? OTHER : defaultValue)
   const [custom, setCustom] = useState(initialIsOther ? defaultValue : "")
   const isOther = choice === OTHER
@@ -21,7 +19,7 @@ export default function StoreSelect({ defaultValue = "" }: { defaultValue?: stri
   return (
     <>
       <label className="flex items-center gap-2">
-        <span className="w-12 shrink-0 text-neutral-500">Store:</span>
+        <span className="w-12 shrink-0 text-ck-muted">Store:</span>
         <select
           name={isOther ? "store-choice" : "store"}
           value={choice}
@@ -32,7 +30,7 @@ export default function StoreSelect({ defaultValue = "" }: { defaultValue?: stri
           <option value="" disabled>
             Choose a store…
           </option>
-          {STORES.map((s) => (
+          {STORE_OPTIONS.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
@@ -42,7 +40,7 @@ export default function StoreSelect({ defaultValue = "" }: { defaultValue?: stri
       </label>
       {isOther && (
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-neutral-500">Name:</span>
+          <span className="w-12 shrink-0 text-ck-muted">Name:</span>
           <input
             name="store"
             value={custom}

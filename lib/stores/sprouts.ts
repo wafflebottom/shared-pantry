@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto"
 import type { ProductResult, StoreAdapter } from "@/lib/product"
+import {
+  fetchText,
+  fetchWithTimeout,
+  cookiesToHeader,
+  logAdapterFailure,
+  mapBatches,
+  type JsonObj,
+} from "@/lib/stores/http"
 
 // Sprouts storefront (Instacart Platform). Simon's Denver store, captured
 // from his own browser session: shopId 514439, postalCode 80209, zoneId 943.
@@ -38,8 +46,6 @@ const BROWSER_HEADERS = {
   "x-client-user-id": "21498206729404892",
   "x-ic-view-layer": "true",
 }
-
-type JsonObj = Record<string, unknown>
 
 function gqlUrl(operation: string, variables: unknown, hash: string): string {
   const extensions = { persistedQuery: { version: 1, sha256Hash: hash } }
@@ -90,14 +96,8 @@ function itemsUrl(ids: string[]): string {
   )
 }
 
-async function getText(url: string, headers: Record<string, string>): Promise<string | null> {
-  try {
-    const res = await fetch(url, { headers, cache: "no-store" })
-    if (!res.ok) return null
-    return await res.text()
-  } catch {
-    return null
-  }
+async function getText(url: string, headers: Record<string, string>, query: string): Promise<string | null> {
+  return fetchText(url, headers, "Sprouts", query)
 }
 
 // The storefront mints its guest session in the Set-Cookie of an ordinary
@@ -107,18 +107,18 @@ async function mintCookieHeader(
   headers: Record<string, string>
 ): Promise<string | null> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${STOREFRONT_SEARCH_PAGE}?k=${encodeURIComponent(query)}`,
       { headers, cache: "no-store" }
     )
     await res.text()
-    const cookieHeader = res.headers
-      .getSetCookie()
-      .map((c) => c.split(";")[0])
-      .filter(Boolean)
-      .join("; ")
-    return cookieHeader || null
-  } catch {
+    return cookiesToHeader(res)
+  } catch (e) {
+    logAdapterFailure(
+      "Sprouts",
+      query,
+      e instanceof Error ? `${e.name}: ${e.message}` : "fetch error"
+    )
     return null
   }
 }
@@ -195,14 +195,14 @@ async function searchProducts(query: string): Promise<ProductResult[]> {
     if (!cookieHeader) return []
     let authed = { ...headers, Cookie: cookieHeader }
 
-    let text = await getText(placementsUrl(query, pageViewId), authed)
+    let text = await getText(placementsUrl(query, pageViewId), authed, query)
     // A stale session 401s with "Not Authenticated" wrapped in a 200;
     // re-mint once and retry before giving up.
     if (text !== null && text.includes("Not Authenticated")) {
       cookieHeader = await mintCookieHeader(query, headers)
       if (!cookieHeader) return []
       authed = { ...headers, Cookie: cookieHeader }
-      text = await getText(placementsUrl(query, pageViewId), authed)
+      text = await getText(placementsUrl(query, pageViewId), authed, query)
     }
     if (text === null) return []
     const placementsData = JSON.parse(text) as JsonObj
@@ -220,15 +220,19 @@ async function searchProducts(query: string): Promise<ProductResult[]> {
     for (const item of inlined) push(item)
 
     const toResolve = ids.slice(0, MAX_IDS_TO_RESOLVE)
-    for (let i = 0; i < toResolve.length; i += ITEMS_BATCH_SIZE) {
-      const batch = toResolve.slice(i, i + ITEMS_BATCH_SIZE)
-      const batchText = await getText(itemsUrl(batch), authed)
-      if (batchText === null) continue
-      const batchData = JSON.parse(batchText) as JsonObj
-      const items = (batchData.data as JsonObj | undefined)?.items
-      if (!Array.isArray(items)) continue
-      for (const item of items as JsonObj[]) push(item)
-    }
+    const resolved = await mapBatches(toResolve, ITEMS_BATCH_SIZE, async (batch) => {
+      const batchText = await getText(itemsUrl(batch), authed, query)
+      if (batchText === null) return []
+      try {
+        const batchData = JSON.parse(batchText) as JsonObj
+        const items = (batchData.data as JsonObj | undefined)?.items
+        if (!Array.isArray(items)) return []
+        return items as JsonObj[]
+      } catch {
+        return []
+      }
+    })
+    for (const item of resolved) push(item)
     return results
   } catch {
     return []

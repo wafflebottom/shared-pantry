@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma"
-import { Header } from "@/components/ui/Header"
-import Footer from "@/components/ui/Footer"
-import ListTile from "@/components/ui/ListTile"
+import Header from "@/components/Server/Header"
+import Footer from "@/components/Server/Footer"
+import ListTile from "@/components/Client/ListTile"
 
 export default async function Home() {
   const tiles = await prisma.listTile.findMany({
@@ -15,12 +15,16 @@ export default async function Home() {
   })
 
   return (
-    <div className="min-h-screen bg-rose-50 font-sans">
+    <div className="min-h-screen bg-ck-bg font-sans lg:pl-56">
       <Header lists={tiles} />
       <main className="mx-auto grid max-w-5xl grid-cols-2 gap-4 px-4 pb-32 pt-28 sm:grid-cols-3">
         {tiles.map((tile) => {
-          const remainingNames = tile.items.filter((i) => !i.completed).map((i) => i.title)
-          const completedCount = tile.items.filter((i) => i.completed).length
+          const remainingNames: string[] = []
+          let completedCount = 0
+          for (const item of tile.items) {
+            if (item.completed) completedCount += 1
+            else remainingNames.push(item.title)
+          }
           return (
             <ListTile
               key={tile.id}

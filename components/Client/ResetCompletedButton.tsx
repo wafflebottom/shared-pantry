@@ -1,7 +1,7 @@
 "use client"
 
 import { useTransition } from "react"
-import { resetCompletedItems } from "../../app/actions"
+import { resetCompletedItems } from "@/app/actions/items"
 
 export default function ResetCompletedButton({ listTileID }: { listTileID: number}) {
   const [, startTransition] = useTransition()
@@ -15,7 +15,7 @@ export default function ResetCompletedButton({ listTileID }: { listTileID: numbe
   }
 
   return (
-    <button type="button" onClick={handleReset} className="shrink-0 cursor-pointer text-rose-500 hover:underline">
+    <button type="button" onClick={handleReset} className="shrink-0 cursor-pointer text-ck-primary hover:underline">
       Reset
     </button>
   )

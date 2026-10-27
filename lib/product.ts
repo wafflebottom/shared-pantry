@@ -29,6 +29,11 @@ export type PackageSize = { qty: number; unit: string }
 // trailing "59 fl oz". Anchored to the end of the name so mid-name numbers
 // ("80/20", "100%") are never mistaken for sizes. "Count" reads as "ct"
 // (Whole Foods names say "18 Count"), so a 12-count is still a dozen.
+// The size-unit alternation shared with adapters (Target interpolates it
+// into its own title regexes). SIZE_RE below uses the same alternation.
+export const SIZE_UNIT_PATTERN =
+  "gal|qt|pt|fl oz|oz|lb|ct|count|ea|each|l|ml|g"
+
 const SIZE_RE =
   /(?:\((\d+(?:\.\d+)?)\s*(gal|qt|pt|fl oz|oz|lb|ct|count|ea|each|l|ml|g)\)|\((gal|qt|pt|fl oz|oz|lb|ct|count|ea|each|l|ml|g)\)|(\d+(?:\.\d+)?)\s*(gal|qt|pt|fl oz|oz|lb|ct|count|ea|each|l|ml|g))\s*$/i
 

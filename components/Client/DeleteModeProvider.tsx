@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 
 type DeleteModeContextValue = {
   deleteMode: boolean
@@ -8,27 +8,34 @@ type DeleteModeContextValue = {
   selectedIds: number[]
   toggleSelected: (id: number) => void
   clearSelected: () => void
-  listTileID: number
 }
 
 const DeleteModeContext = createContext<DeleteModeContextValue | null>(null)
 
-export function DeleteModeProvider({ listTileID, children }: { listTileID: number; children: ReactNode }) {
+// No listTileID here: the provider only tracks bulk-delete mode/selection.
+// The list id is passed as a prop to DeleteButton, which is the only
+// consumer that needs it.
+export function DeleteModeProvider({ children }: { children: ReactNode }) {
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<number[]>([])
 
-  function toggleSelected(id: number) {
+  const toggleSelected = useCallback((id: number) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     )
-  }
+  }, [])
 
-  function clearSelected() {
+  const clearSelected = useCallback(() => {
     setSelectedIds([])
-  }
+  }, [])
+
+  const value = useMemo(
+    () => ({ deleteMode, setDeleteMode, selectedIds, toggleSelected, clearSelected }),
+    [deleteMode, selectedIds, toggleSelected, clearSelected]
+  )
 
   return (
-    <DeleteModeContext.Provider value={{ deleteMode, setDeleteMode, selectedIds, toggleSelected, clearSelected, listTileID }}>
+    <DeleteModeContext.Provider value={value}>
       {children}
     </DeleteModeContext.Provider>
   )

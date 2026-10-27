@@ -1,7 +1,7 @@
 "use client"
 
-import { deleteCompletedItems } from "../../app/actions"
-import { usePendingDelete } from "./PendingDeleteProvider"
+import { deleteCompletedItems } from "@/app/actions/items"
+import { usePendingDelete } from "@/components/Client/PendingDeleteProvider"
 
 export default function ClearCompletedButton({ listTileID, completedIds }: { listTileID: number; completedIds: number[] }) {
   const { stageDeletion } = usePendingDelete()
@@ -17,7 +17,7 @@ export default function ClearCompletedButton({ listTileID, completedIds }: { lis
   }
 
   return (
-    <button type="button" onClick={handleClear} className="shrink-0 cursor-pointer text-rose-500 hover:underline">
+    <button type="button" onClick={handleClear} className="shrink-0 cursor-pointer text-ck-primary hover:underline">
       Clear
     </button>
   )

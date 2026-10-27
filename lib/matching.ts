@@ -1,6 +1,6 @@
 import type { ProductResult } from "@/lib/product"
 
-export function tokensFor(title: string, brand: string | null): string[] {
+function tokensFor(title: string, brand: string | null): string[] {
   return `${brand ?? ""} ${title}`
     .toLowerCase()
     .split(/[^a-z0-9.]+/)

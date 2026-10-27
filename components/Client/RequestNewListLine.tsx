@@ -1,21 +1,15 @@
 "use client"
 
-import { usePathname } from "next/navigation"
 import { useRef, useState } from "react"
 import { Check, Plus, X } from "lucide-react"
-import { createListItem } from "@/app/actions"
-import { UNIT_FORMS, predictUnit } from "@/lib/units"
+import { createListItem } from "@/app/actions/items"
+import { UNIT_FORM_OPTIONS, predictUnit } from "@/lib/units"
+import { fieldClass, qtyClass } from "@/lib/utils"
 import ProductSearch from "@/components/Client/ProductSearch"
+import { applyProductPick } from "@/components/Client/applyProductPick"
 import type { PickerProduct } from "@/lib/price-fetch"
 
-const fieldClass =
-  "flex-1 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
-
-const unitForms = [...new Set(Object.values(UNIT_FORMS).flat())]
-
-export default function RequestNewListLine() {
-  const pathname = usePathname()
-  const listTileID = pathname?.split("/")[2] ?? ""
+export default function RequestNewListLine({ listTileID }: { listTileID: number }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [title, setTitle] = useState("")
   const [brand, setBrand] = useState("")
@@ -44,15 +38,19 @@ export default function RequestNewListLine() {
   }
 
   const handlePick = (product: PickerProduct) => {
-    setTitle(product.title)
-    setBrand(product.brand ?? "")
-    // A priceless pick (Whole Foods) leaves the price blank for manual entry.
-    if (product.price != null) setPrice(product.price.toFixed(2))
-    if (product.itemQty != null && product.itemUnit) {
-      setQty(String(product.itemQty))
-      setUnit(product.itemUnit)
-      lastAutoUnit.current = ""
-    }
+    applyProductPick(
+      product,
+      {
+        setTitle,
+        setBrand,
+        setPrice,
+        setQty,
+        setUnit,
+      },
+      () => {
+        lastAutoUnit.current = ""
+      }
+    )
   }
 
   const handleSubmit = async (formData: FormData) => {
@@ -77,7 +75,7 @@ export default function RequestNewListLine() {
         type="button"
         aria-label="Add item"
         onClick={openDialog}
-        className="flex items-center justify-center rounded-full bg-white/80 p-2 text-rose-900 shadow"
+        className="flex items-center justify-center rounded-full bg-ck-primary p-2 text-white shadow"
       >
         <Plus />
       </button>
@@ -90,14 +88,14 @@ export default function RequestNewListLine() {
               type="button"
               aria-label="Close"
               onClick={() => dialogRef.current?.close()}
-              className="text-neutral-500"
+              className="text-ck-muted"
             >
               <X />
             </button>
           </div>
 
           <div className="mt-2 flex items-center gap-2">
-            <label htmlFor="add-item" className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor="add-item" className="w-12 shrink-0 text-ck-muted">
               Item
             </label>
             <input
@@ -110,7 +108,7 @@ export default function RequestNewListLine() {
             />
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <label htmlFor="add-brand" className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor="add-brand" className="w-12 shrink-0 text-ck-muted">
               Brand
             </label>
             <input
@@ -123,7 +121,7 @@ export default function RequestNewListLine() {
             />
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <label htmlFor="add-qty" className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor="add-qty" className="w-12 shrink-0 text-ck-muted">
               Qty
             </label>
             <input
@@ -134,9 +132,9 @@ export default function RequestNewListLine() {
               step="any"
               value={qty}
               onChange={(e) => handleQtyChange(e.target.value)}
-              className="w-20 rounded-md bg-neutral-100 px-2 py-1 outline-none focus:bg-white focus:ring-1 focus:ring-rose-300"
+              className={qtyClass}
             />
-            <label htmlFor="add-unit" className="shrink-0 text-neutral-500">
+            <label htmlFor="add-unit" className="shrink-0 text-ck-muted">
               Unit
             </label>
             <input
@@ -149,13 +147,13 @@ export default function RequestNewListLine() {
               autoComplete="off"
             />
             <datalist id="unit-forms-add">
-              {unitForms.map((form) => (
+              {UNIT_FORM_OPTIONS.map((form) => (
                 <option key={form} value={form} />
               ))}
             </datalist>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <label htmlFor="add-price" className="w-12 shrink-0 text-neutral-500">
+            <label htmlFor="add-price" className="w-12 shrink-0 text-ck-muted">
               Price
             </label>
             <input
@@ -170,13 +168,13 @@ export default function RequestNewListLine() {
             />
           </div>
 
-          <ProductSearch listTileID={Number(listTileID)} onPick={handlePick} inputRef={searchInputRef} />
+          <ProductSearch listTileID={listTileID} onPick={handlePick} inputRef={searchInputRef} />
 
           <div className="mt-10 flex items-center justify-end">
             <button
               type="submit"
               aria-label="Add item"
-              className="flex items-center justify-center rounded-full bg-rose-100 p-2 text-rose-900"
+              className="flex items-center justify-center rounded-full bg-ck-primary p-2 text-white"
             >
               <Check />
             </button>
